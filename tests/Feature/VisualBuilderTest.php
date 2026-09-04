@@ -131,6 +131,7 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/routes/generated-api.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/tests/Feature/GeneratedRoutesTest.php');
         $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
         $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
@@ -163,6 +164,7 @@ class VisualBuilderTest extends TestCase
         $routesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated.php');
         $apiRoutesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated-api.php');
         $schemaTestSource = Storage::disk('local')->get('generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php');
+        $routesTestSource = Storage::disk('local')->get('generated/crm/iteration-1/tests/Feature/GeneratedRoutesTest.php');
         $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
         $this->assertStringContainsString('<flux:select.option value="primary">Primary</flux:select.option>', $createSource);
         $this->assertStringContainsString('<div class="max-w-2xl">', $createSource);
@@ -172,6 +174,8 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
         $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email'])", $schemaTestSource);
         $this->assertStringContainsString("Schema::hasColumns('roles', ['id', 'name'])", $schemaTestSource);
+        $this->assertStringContainsString("Route::has('customers.create')", $routesTestSource);
+        $this->assertStringContainsString("Route::has('customers.index')", $routesTestSource);
         foreach ([
             'generated/crm/iteration-1/app/Models/Customer.php',
             $migrationPath,
@@ -181,6 +185,7 @@ class VisualBuilderTest extends TestCase
             'generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php',
             'generated/crm/iteration-1/routes/generated-api.php',
             'generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php',
+            'generated/crm/iteration-1/tests/Feature/GeneratedRoutesTest.php',
         ] as $generatedPhp) {
             $lint = new Process([PHP_BINARY, '-l', Storage::disk('local')->path($generatedPhp)]);
             $lint->run();

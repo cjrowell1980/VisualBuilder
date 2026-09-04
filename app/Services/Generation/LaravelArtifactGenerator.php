@@ -50,6 +50,9 @@ class LaravelArtifactGenerator
         if ($iteration->models->isNotEmpty()) {
             $files[] = $this->write($root, 'tests/Feature/GeneratedSchemaTest.php', $this->schemaTest($iteration));
         }
+        if ($iteration->pages->isNotEmpty() || ($iteration->project->template !== 'application' && $iteration->models->isNotEmpty())) {
+            $files[] = $this->write($root, 'tests/Feature/GeneratedRoutesTest.php', $this->routesTest($iteration));
+        }
 
         foreach ($iteration->pages as $page) {
             $files[] = $this->write($root, "resources/views/pages/{$page->slug}.blade.php", $this->page($page));
@@ -533,6 +536,38 @@ class GeneratedSchemaTest extends TestCase
     use RefreshDatabase;
 
 {$methods}
+}
+PHP;
+    }
+
+    private function routesTest(BuildIteration $iteration): string
+    {
+        $assertions = $iteration->pages->map(function (PageDefinition $page): string {
+            $name = Str::of($page->slug)->replace('/', '.')->toString();
+
+            return "        \$this->assertTrue(Route::has('{$name}'));";
+        });
+        if ($iteration->project->template !== 'application') {
+            $assertions = $assertions->concat($iteration->models->map(
+                fn (ModelDefinition $model): string => "        \$this->assertTrue(Route::has('{$model->table_name}.index'));"
+            ));
+        }
+        $assertionCode = $assertions->implode("\n");
+
+        return <<<PHP
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Support\Facades\Route;
+use Tests\TestCase;
+
+class GeneratedRoutesTest extends TestCase
+{
+    public function test_generated_routes_are_registered(): void
+    {
+{$assertionCode}
+    }
 }
 PHP;
     }
