@@ -129,6 +129,7 @@ class LaravelArtifactGenerator
         $fillable = $model->fields->pluck('name')->map(fn (string $name) => "'{$name}'")->implode(', ');
         $softDeletesImport = $model->soft_deletes ? "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n" : '';
         $softDeletesUse = $model->soft_deletes ? "\n    use SoftDeletes;\n" : '';
+        $timestampsProperty = $model->getAttribute('timestamps') ? '' : "\n    public \$timestamps = false;\n";
         $relationTypes = $model->relationships->pluck('type')->unique()->map(fn (string $type): string => match ($type) {
             'belongsTo' => 'BelongsTo',
             'hasOne' => 'HasOne',
@@ -151,7 +152,7 @@ use Illuminate\Database\Eloquent\Model;
 class {$model->name} extends Model
 {{$softDeletesUse}
     protected \$fillable = [{$fillable}];
-{$relations}
+{$timestampsProperty}{$relations}
 }
 PHP;
     }
@@ -246,7 +247,7 @@ PHP;
             ->map(fn (ModelRelationship $relationship): string => "            \$table->foreignId('{$relationship->foreign_key}')->constrained('{$relationship->target->table_name}');")
             ->implode("\n");
         $foreignKeys = $foreignKeys === '' ? '' : $foreignKeys."\n";
-        $timestamps = $model->timestamps ? "\n            \$table->timestamps();" : '';
+        $timestamps = $model->getAttribute('timestamps') ? "\n            \$table->timestamps();" : '';
         $softDeletes = $model->soft_deletes ? "\n            \$table->softDeletes();" : '';
         $table = $model->table_name;
 

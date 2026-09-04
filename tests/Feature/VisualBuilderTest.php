@@ -76,7 +76,7 @@ class VisualBuilderTest extends TestCase
             'type' => 'belongsTo',
             'foreign_key' => 'parent_id',
         ]);
-        $role = $iteration->models()->create(['name' => 'Role', 'table_name' => 'roles']);
+        $role = $iteration->models()->create(['name' => 'Role', 'table_name' => 'roles', 'soft_deletes' => true, 'timestamps' => false]);
         $role->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
         $model->relationships()->create([
             'target_model_id' => $role->id,
@@ -135,6 +135,7 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
         $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
+        $roleModelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Role.php');
         $migrationPath = collect(Storage::disk('local')->files('generated/crm/iteration-1/database/migrations'))
             ->first(fn (string $path): bool => str_contains($path, 'create_customers_table'));
         $this->assertNotNull($migrationPath);
@@ -147,11 +148,16 @@ class VisualBuilderTest extends TestCase
         sort($orderedMigrations);
         $roleMigrationPath = collect($orderedMigrations)->first(fn (string $path): bool => str_contains($path, 'create_roles_table'));
         $this->assertNotNull($roleMigrationPath);
+        $roleMigrationSource = Storage::disk('local')->get($roleMigrationPath);
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
         $this->assertLessThan(array_search($migrationPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
+        $this->assertStringContainsString('use SoftDeletes;', $roleModelSource);
+        $this->assertStringContainsString('public $timestamps = false;', $roleModelSource);
+        $this->assertStringContainsString('$table->softDeletes();', $roleMigrationSource);
+        $this->assertStringNotContainsString('$table->timestamps();', $roleMigrationSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
         $this->assertStringContainsString("string('email')->default('unknown@example.com')->index()->unique()", $migrationSource);
         $this->assertStringContainsString("foreignId('customer_id')->constrained('customers')", $pivotSource);
@@ -213,6 +219,8 @@ class VisualBuilderTest extends TestCase
             ->call('editModel', $contact->id)
             ->set('modelName', 'ContactRecord')
             ->set('modelTableName', 'contact_records')
+            ->set('modelSoftDeletes', true)
+            ->set('modelTimestamps', false)
             ->call('saveModel')
             ->set('fieldName', 'email')
             ->set('fieldLabel', 'Email address')
@@ -223,6 +231,8 @@ class VisualBuilderTest extends TestCase
 
         $this->assertSame('ContactRecord', $contact->fresh()->name);
         $this->assertSame('contact_records', $contact->fresh()->table_name);
+        $this->assertTrue($contact->fresh()->soft_deletes);
+        $this->assertFalse((bool) $contact->fresh()->getAttribute('timestamps'));
 
         $field = $contact->fields()->firstOrFail();
         $this->assertSame(['required', 'email', 'max:255'], $field->validation_rules);

@@ -28,6 +28,10 @@ new class extends Component
 
     public string $modelTableName = '';
 
+    public bool $modelSoftDeletes = false;
+
+    public bool $modelTimestamps = true;
+
     public ?int $editingModelId = null;
 
     public string $fieldName = '';
@@ -126,13 +130,17 @@ new class extends Component
         $data = $this->validate([
             'modelName' => ['required', 'regex:/^[A-Z][A-Za-z0-9]*$/', 'max:80'],
             'modelTableName' => ['nullable', 'regex:/^[a-z][a-z0-9_]*$/', 'max:80'],
+            'modelSoftDeletes' => ['boolean'],
+            'modelTimestamps' => ['boolean'],
         ]);
         $model = $this->iteration()->models()->create([
             'name' => $data['modelName'],
             'table_name' => $data['modelTableName'] ?: Str::snake(Str::pluralStudly($data['modelName'])),
+            'soft_deletes' => $data['modelSoftDeletes'],
+            'timestamps' => $data['modelTimestamps'],
         ]);
         $this->selectedModelId = $model->id;
-        $this->reset('modelName', 'modelTableName');
+        $this->resetModelEditor();
         $this->touchDesign();
     }
 
@@ -142,6 +150,8 @@ new class extends Component
         $this->editingModelId = $model->id;
         $this->modelName = $model->name;
         $this->modelTableName = $model->table_name;
+        $this->modelSoftDeletes = $model->soft_deletes;
+        $this->modelTimestamps = (bool) $model->getAttribute('timestamps');
     }
 
     public function saveModel(): void
@@ -151,15 +161,28 @@ new class extends Component
         $data = $this->validate([
             'modelName' => ['required', 'regex:/^[A-Z][A-Za-z0-9]*$/', 'max:80', Rule::unique('model_definitions', 'name')->where('build_iteration_id', $iteration->id)->ignore($model->id)],
             'modelTableName' => ['required', 'regex:/^[a-z][a-z0-9_]*$/', 'max:80', Rule::unique('model_definitions', 'table_name')->where('build_iteration_id', $iteration->id)->ignore($model->id)],
+            'modelSoftDeletes' => ['boolean'],
+            'modelTimestamps' => ['boolean'],
         ]);
-        $model->update(['name' => $data['modelName'], 'table_name' => $data['modelTableName']]);
+        $model->update([
+            'name' => $data['modelName'],
+            'table_name' => $data['modelTableName'],
+            'soft_deletes' => $data['modelSoftDeletes'],
+            'timestamps' => $data['modelTimestamps'],
+        ]);
         $this->cancelModelEdit();
         $this->touchDesign();
     }
 
     public function cancelModelEdit(): void
     {
-        $this->reset('editingModelId', 'modelName', 'modelTableName');
+        $this->resetModelEditor();
+    }
+
+    private function resetModelEditor(): void
+    {
+        $this->reset('editingModelId', 'modelName', 'modelTableName', 'modelSoftDeletes');
+        $this->modelTimestamps = true;
     }
 
     public function addField(): void
@@ -697,12 +720,12 @@ new class extends Component
             <aside class="border-r border-zinc-200 p-5 dark:border-zinc-700">
                 <flux:heading size="sm">Models</flux:heading>
                 <div class="mt-4 space-y-1">@foreach ($iteration->models as $model)<button type="button" wire:click="selectModel({{ $model->id }})" class="flex w-full justify-between rounded-lg px-3 py-2 text-left text-sm {{ $selectedModelId === $model->id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"><span>{{ $model->name }}</span><span>{{ $model->fields->count() }}</span></button>@endforeach</div>
-                <form wire:submit="{{ $editingModelId ? 'saveModel' : 'addModel' }}" class="mt-5 space-y-3"><flux:input wire:model="modelName" label="Model" placeholder="Customer" /><flux:input wire:model="modelTableName" label="Table name" placeholder="customers" /><div class="flex gap-2"><flux:button type="submit" size="sm" class="flex-1">{{ $editingModelId ? 'Save model' : 'Add model' }}</flux:button>@if($editingModelId)<flux:button wire:click="cancelModelEdit" type="button" size="sm" variant="ghost">Cancel</flux:button>@endif</div></form>
+                <form wire:submit="{{ $editingModelId ? 'saveModel' : 'addModel' }}" class="mt-5 space-y-3"><flux:input wire:model="modelName" label="Model" placeholder="Customer" /><flux:input wire:model="modelTableName" label="Table name" placeholder="customers" /><div class="space-y-2"><flux:checkbox wire:model="modelTimestamps" label="Created and updated timestamps" /><flux:checkbox wire:model="modelSoftDeletes" label="Soft deletes" /></div><div class="flex gap-2"><flux:button type="submit" size="sm" class="flex-1">{{ $editingModelId ? 'Save model' : 'Add model' }}</flux:button>@if($editingModelId)<flux:button wire:click="cancelModelEdit" type="button" size="sm" variant="ghost">Cancel</flux:button>@endif</div></form>
             </aside>
             <main class="p-6">
                 @php($selected = $iteration->models->firstWhere('id', $selectedModelId))
                 @if ($selected)
-                    <div class="flex justify-between"><div><flux:heading>{{ $selected->name }}</flux:heading><flux:text>{{ $selected->table_name }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selected->fields->count() }} fields</flux:badge><flux:button wire:click="editModel({{ $selected->id }})" size="sm" variant="ghost" icon="pencil-square" /><flux:button wire:click="deleteModel({{ $selected->id }})" wire:confirm="Delete this model and its fields and relationships?" size="sm" variant="danger" icon="trash" /></div></div>
+                    <div class="flex justify-between"><div><flux:heading>{{ $selected->name }}</flux:heading><flux:text>{{ $selected->table_name }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selected->getAttribute('timestamps') ? 'timestamps' : 'no timestamps' }}</flux:badge>@if($selected->soft_deletes)<flux:badge color="amber">soft deletes</flux:badge>@endif<flux:badge>{{ $selected->fields->count() }} fields</flux:badge><flux:button wire:click="editModel({{ $selected->id }})" size="sm" variant="ghost" icon="pencil-square" /><flux:button wire:click="deleteModel({{ $selected->id }})" wire:confirm="Delete this model and its fields and relationships?" size="sm" variant="danger" icon="trash" /></div></div>
                     <div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">@forelse ($selected->fields as $field)<div class="grid grid-cols-[1fr_7rem_8rem_auto] items-center gap-3 border-b border-zinc-100 px-4 py-3 text-sm last:border-0 dark:border-zinc-800"><div><div>{{ $field->label }}</div><code class="text-xs">{{ $field->name }}</code></div><span>{{ $field->type }}</span><span class="text-xs text-zinc-500">{{ $field->nullable ? 'nullable' : 'required' }}{{ $field->unique ? ' · unique' : '' }}</span><div class="flex gap-1"><flux:button wire:click="editField({{ $field->id }})" size="xs" variant="ghost" icon="pencil-square" /><flux:button wire:click="moveField({{ $field->id }}, 'up')" size="xs" variant="ghost" icon="arrow-up" /><flux:button wire:click="moveField({{ $field->id }}, 'down')" size="xs" variant="ghost" icon="arrow-down" /><flux:button wire:click="deleteField({{ $field->id }})" wire:confirm="Delete this field?" size="xs" variant="danger" icon="trash" /></div></div>@empty<div class="p-10 text-center text-sm text-zinc-500">Add the first field using the inspector.</div>@endforelse</div>
                     <div class="mt-7"><flux:heading size="sm">Relationships</flux:heading><div class="mt-3 space-y-2">@forelse($selected->relationships as $relationship)<div class="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800"><code>{{ $relationship->name }}()</code><span>{{ $relationship->type }} {{ $relationship->target->name }}</span></div>@empty<flux:text>No relationships defined.</flux:text>@endforelse</div></div>
                 @else<div class="grid h-full place-items-center"><flux:heading>Start with a model</flux:heading></div>@endif
