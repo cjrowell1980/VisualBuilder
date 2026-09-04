@@ -324,11 +324,17 @@ BLADE;
             ? Str::snake($control->label ?: 'value')
             : $control->field->name;
 
-        return match ($control->control_type) {
+        $options = collect($control->configuration['options'] ?? [])->map(function (array $option): string {
+            $value = e($option['value']);
+            $optionLabel = e($option['label']);
+
+            return "        <flux:select.option value=\"{$value}\">{$optionLabel}</flux:select.option>";
+        })->implode("\n");
+        $markup = match ($control->control_type) {
             'heading' => "    <flux:heading>{$label}</flux:heading>",
             'text' => "    <flux:text>{$label}</flux:text>",
             'textarea' => "    <flux:textarea wire:model=\"{$field}\" label=\"{$label}\" />",
-            'select' => "    <flux:select wire:model=\"{$field}\" label=\"{$label}\"></flux:select>",
+            'select' => "    <flux:select wire:model=\"{$field}\" label=\"{$label}\">\n{$options}\n    </flux:select>",
             'checkbox' => "    <flux:checkbox wire:model=\"{$field}\" label=\"{$label}\" />",
             'button' => $hasSave
                 ? "    <flux:button wire:click=\"save\" variant=\"primary\">{$label}</flux:button>"
@@ -338,6 +344,14 @@ BLADE;
                 : "    <div class=\"overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700\"><div class=\"p-4\">{$label}</div></div>",
             default => "    <flux:input wire:model=\"{$field}\" label=\"{$label}\" />",
         };
+        $width = match ($control->width) {
+            'half' => 'max-w-2xl',
+            'third' => 'max-w-lg',
+            'two-thirds' => 'max-w-4xl',
+            default => 'w-full',
+        };
+
+        return "    <div class=\"{$width}\">\n{$markup}\n    </div>";
     }
 
     private function table(PageDefinition $page): string

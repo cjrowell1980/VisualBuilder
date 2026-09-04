@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $label
  * @property string $width
  * @property int|null $model_field_id
+ * @property array{options?: list<array{value: string, label: string}>}|null $configuration
  * @property ModelField|null $field
  */
 class ControlDefinition extends Model

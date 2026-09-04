@@ -96,7 +96,13 @@ class VisualBuilderTest extends TestCase
         ]);
         $page->controls()->create(['control_type' => 'table', 'label' => 'Customer records']);
         $createPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Create customer', 'slug' => 'customers/create', 'page_type' => 'create']);
-        $createPage->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Email']);
+        $createPage->controls()->create([
+            'model_field_id' => $field->id,
+            'control_type' => 'select',
+            'label' => 'Email',
+            'width' => 'half',
+            'configuration' => ['options' => [['value' => 'primary', 'label' => 'Primary']]],
+        ]);
         $createPage->controls()->create(['control_type' => 'button', 'label' => 'Save']);
         $editPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Edit customer', 'slug' => 'customers/edit', 'page_type' => 'edit']);
         $editPage->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Email']);
@@ -143,6 +149,8 @@ class VisualBuilderTest extends TestCase
         $routesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated.php');
         $apiRoutesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated-api.php');
         $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
+        $this->assertStringContainsString('<flux:select.option value="primary">Primary</flux:select.option>', $createSource);
+        $this->assertStringContainsString('<div class="max-w-2xl">', $createSource);
         $this->assertStringContainsString('findOrFail($this->recordId)->update($validated)', $editSource);
         $this->assertStringNotContainsString('function save', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
@@ -231,12 +239,16 @@ class VisualBuilderTest extends TestCase
             ->set('pageSlug', 'contact-directory')
             ->call('savePage')
             ->call('editControl', $control->id)
-            ->set('controlType', 'textarea')
+            ->set('controlType', 'select')
             ->set('controlLabel', 'Primary email field')
+            ->set('controlWidth', 'half')
+            ->set('controlOptions', "primary:Primary\nsecondary:Secondary")
             ->call('saveControl');
         $this->assertSame('contact-directory', $page->fresh()->slug);
-        $this->assertSame('textarea', $control->fresh()->control_type);
+        $this->assertSame('select', $control->fresh()->control_type);
         $this->assertSame('Primary email field', $control->fresh()->label);
+        $this->assertSame('half', $control->fresh()->width);
+        $this->assertSame('Secondary', $control->fresh()->configuration['options'][1]['label']);
 
         $component
             ->set('pluginType', 'npm')

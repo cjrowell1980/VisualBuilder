@@ -70,6 +70,10 @@ new class extends Component
 
     public string $controlLabel = '';
 
+    public string $controlWidth = 'full';
+
+    public string $controlOptions = '';
+
     public ?int $controlFieldId = null;
 
     public ?int $editingControlId = null;
@@ -330,14 +334,18 @@ new class extends Component
         $data = $this->validate([
             'controlType' => ['required', Rule::in(['heading', 'text', 'input', 'textarea', 'select', 'checkbox', 'button', 'table'])],
             'controlLabel' => ['nullable', 'string', 'max:100'],
+            'controlWidth' => ['required', Rule::in(['full', 'half', 'third', 'two-thirds'])],
+            'controlOptions' => ['nullable', 'string', 'max:2000'],
         ]);
         $page->controls()->create([
             'model_field_id' => $fieldId,
             'control_type' => $data['controlType'],
             'label' => $data['controlLabel'] ?: Str::headline($data['controlType']),
+            'width' => $data['controlWidth'],
+            'configuration' => ['options' => $this->parseControlOptions($data['controlOptions'])],
             'position' => $page->controls()->count(),
         ]);
-        $this->reset('controlLabel', 'controlFieldId');
+        $this->cancelControlEdit();
         $this->touchDesign();
     }
 
@@ -349,6 +357,10 @@ new class extends Component
         $this->controlType = $control->control_type;
         $this->controlLabel = (string) $control->label;
         $this->controlFieldId = $control->model_field_id;
+        $this->controlWidth = $control->width;
+        $this->controlOptions = collect($control->configuration['options'] ?? [])
+            ->map(fn (array $option): string => $option['value'].':'.$option['label'])
+            ->implode("\n");
     }
 
     public function saveControl(): void
@@ -371,11 +383,15 @@ new class extends Component
         $data = $this->validate([
             'controlType' => ['required', Rule::in(['heading', 'text', 'input', 'textarea', 'select', 'checkbox', 'button', 'table'])],
             'controlLabel' => ['nullable', 'string', 'max:100'],
+            'controlWidth' => ['required', Rule::in(['full', 'half', 'third', 'two-thirds'])],
+            'controlOptions' => ['nullable', 'string', 'max:2000'],
         ]);
         $control->update([
             'model_field_id' => $fieldId,
             'control_type' => $data['controlType'],
             'label' => $data['controlLabel'] ?: Str::headline($data['controlType']),
+            'width' => $data['controlWidth'],
+            'configuration' => ['options' => $this->parseControlOptions($data['controlOptions'])],
         ]);
         $this->cancelControlEdit();
         $this->touchDesign();
@@ -383,8 +399,9 @@ new class extends Component
 
     public function cancelControlEdit(): void
     {
-        $this->reset('editingControlId', 'controlLabel', 'controlFieldId');
+        $this->reset('editingControlId', 'controlLabel', 'controlFieldId', 'controlOptions');
         $this->controlType = 'input';
+        $this->controlWidth = 'full';
     }
 
     public function generate(LaravelArtifactGenerator $generator): void
@@ -601,6 +618,20 @@ new class extends Component
             $this->touchDesign();
         }
     }
+
+    /** @return list<array{value: string, label: string}> */
+    private function parseControlOptions(string $options): array
+    {
+        return collect(preg_split('/\r\n|\r|\n/', trim($options)) ?: [])
+            ->filter()
+            ->map(function (string $line): array {
+                [$value, $label] = array_pad(array_map('trim', explode(':', $line, 2)), 2, null);
+
+                return ['value' => $value, 'label' => $label ?: Str::headline($value)];
+            })
+            ->values()
+            ->all();
+    }
 };
 ?>
 
@@ -653,7 +684,7 @@ new class extends Component
         <div class="grid min-h-[40rem] overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 lg:grid-cols-[18rem_1fr_21rem]">
             <aside class="border-r border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Pages</flux:heading><div class="mt-4 space-y-1">@foreach($iteration->pages as $page)<button type="button" wire:click="selectPage({{ $page->id }})" class="flex w-full justify-between rounded-lg px-3 py-2 text-left text-sm {{ $selectedPageId === $page->id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"><span>{{ $page->name }}</span><span>{{ $page->controls->count() }}</span></button>@endforeach</div><form wire:submit="{{ $editingPageId ? 'savePage' : 'addPage' }}" class="mt-5 space-y-3"><flux:input wire:model="pageName" label="Page name" placeholder="Customers" /><flux:input wire:model="pageSlug" label="URL" placeholder="customers" /><flux:select wire:model="pageType" label="Type">@foreach(['custom','dashboard','index','create','edit','show'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:select wire:model="pageModelId" label="Model (optional)"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)<flux:select.option value="{{ $model->id }}">{{ $model->name }}</flux:select.option>@endforeach</flux:select><div class="flex gap-2"><flux:button type="submit" class="flex-1">{{ $editingPageId ? 'Save page' : 'Add page' }}</flux:button>@if($editingPageId)<flux:button wire:click="cancelPageEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form></aside>
             <main class="bg-zinc-50 p-6 dark:bg-zinc-950">@php($selectedPage = $iteration->pages->firstWhere('id', $selectedPageId))@if($selectedPage)<div class="min-h-full rounded-xl border border-zinc-200 bg-white p-7 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"><div class="mb-6 flex justify-between"><div><flux:heading size="xl">{{ $selectedPage->name }}</flux:heading><flux:text>/{{ $selectedPage->slug }} · {{ $selectedPage->page_type }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selectedPage->modelDefinition?->name ?? 'No model' }}</flux:badge><flux:button wire:click="editPage({{ $selectedPage->id }})" size="sm" variant="ghost" icon="pencil-square" /><flux:button wire:click="movePage({{ $selectedPage->id }}, 'up')" size="sm" variant="ghost" icon="arrow-up" /><flux:button wire:click="movePage({{ $selectedPage->id }}, 'down')" size="sm" variant="ghost" icon="arrow-down" /><flux:button wire:click="deletePage({{ $selectedPage->id }})" wire:confirm="Delete this page and all its controls?" size="sm" variant="danger" icon="trash" /></div></div><div class="space-y-4">@forelse($selectedPage->controls as $control)<div class="rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700"><div class="flex justify-between gap-3"><div><span>{{ $control->label }}</span>@if($control->field)<flux:text class="mt-1">Bound to {{ $control->field->name }}</flux:text>@endif</div><div class="flex items-center gap-1"><code class="mr-2 text-xs">{{ $control->control_type }}</code><flux:button wire:click="editControl({{ $control->id }})" size="xs" variant="ghost" icon="pencil-square" /><flux:button wire:click="moveControl({{ $control->id }}, 'up')" size="xs" variant="ghost" icon="arrow-up" /><flux:button wire:click="moveControl({{ $control->id }}, 'down')" size="xs" variant="ghost" icon="arrow-down" /><flux:button wire:click="deleteControl({{ $control->id }})" wire:confirm="Delete this control?" size="xs" variant="danger" icon="trash" /></div></div></div>@empty<div class="grid min-h-64 place-items-center text-center"><div><flux:heading>Empty canvas</flux:heading><flux:text>Add controls from the inspector.</flux:text></div></div>@endforelse</div></div>@else<div class="grid h-full place-items-center"><flux:heading>Create or select a page</flux:heading></div>@endif</main>
-            <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Control inspector</flux:heading><form wire:submit="{{ $editingControlId ? 'saveControl' : 'addControl' }}" class="mt-4 space-y-3"><flux:select wire:model="controlType" label="Control">@foreach(['heading','text','input','textarea','select','checkbox','button','table'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="controlLabel" label="Label" placeholder="Customer name" /><flux:select wire:model="controlFieldId" label="Bound field"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)@foreach($model->fields as $field)<flux:select.option value="{{ $field->id }}">{{ $model->name }} · {{ $field->name }}</flux:select.option>@endforeach @endforeach</flux:select><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedPageId">{{ $editingControlId ? 'Save control' : 'Add to canvas' }}</flux:button>@if($editingControlId)<flux:button wire:click="cancelControlEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form></aside>
+            <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Control inspector</flux:heading><form wire:submit="{{ $editingControlId ? 'saveControl' : 'addControl' }}" class="mt-4 space-y-3"><flux:select wire:model="controlType" label="Control">@foreach(['heading','text','input','textarea','select','checkbox','button','table'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="controlLabel" label="Label" placeholder="Customer name" /><flux:select wire:model="controlFieldId" label="Bound field"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)@foreach($model->fields as $field)<flux:select.option value="{{ $field->id }}">{{ $model->name }} · {{ $field->name }}</flux:select.option>@endforeach @endforeach</flux:select><flux:select wire:model="controlWidth" label="Width"><flux:select.option value="full">Full</flux:select.option><flux:select.option value="half">Half</flux:select.option><flux:select.option value="third">One third</flux:select.option><flux:select.option value="two-thirds">Two thirds</flux:select.option></flux:select><flux:textarea wire:model="controlOptions" label="Select options" description="One per line: value:Label" rows="4" /><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedPageId">{{ $editingControlId ? 'Save control' : 'Add to canvas' }}</flux:button>@if($editingControlId)<flux:button wire:click="cancelControlEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form></aside>
         </div>
     @elseif ($mode === 'preview')
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
