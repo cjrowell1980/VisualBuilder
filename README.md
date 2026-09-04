@@ -6,7 +6,7 @@ Visual Builder turns a versioned application schema into reviewable Laravel code
 
 - Laravel 13, PHP 8.4, Fortify
 - Livewire 4 single-file components (the modern successor to Volt's class-based SFC format)
-- Flux UI with a documented Flux Pro upgrade path
+- Flux UI and Flux Pro 2.18
 - Blade, Alpine, Tailwind CSS 4
 - PostgreSQL 17 and Docker
 - PHPUnit, Larastan, Pint, GitHub Actions, GHCR publishing
@@ -38,14 +38,13 @@ The application is available at `http://localhost:8080`. PostgreSQL data is stor
 
 ## Flux Pro
 
-Flux Pro is a private Composer package and is intentionally not installed without a licence. Authenticate locally with the credentials from your Flux account, ensure `auth.json` remains ignored, then install it:
+Flux Pro is installed as a private Composer package. Authenticate locally with the credentials from your Flux account; `auth.json` is ignored and used as a Docker BuildKit secret:
 
 ```bash
 composer config http-basic.composer.fluxui.dev YOUR_EMAIL YOUR_LICENSE_KEY
-composer require livewire/flux-pro
 ```
 
-CI/deployment should create Composer authentication from repository secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY`; never commit either value.
+Add GitHub Actions secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY` for CI. Also add a `COMPOSER_AUTH` secret containing the Composer authentication JSON for container publishing. Never commit any of these values.
 
 ## Delivery model
 

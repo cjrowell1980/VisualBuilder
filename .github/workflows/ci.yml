@@ -17,6 +17,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - run: composer config --global http-basic.composer.fluxui.dev "$FLUX_USERNAME" "$FLUX_LICENSE_KEY"
+        env:
+          FLUX_USERNAME: ${{ secrets.FLUX_USERNAME }}
+          FLUX_LICENSE_KEY: ${{ secrets.FLUX_LICENSE_KEY }}
       - run: composer install --no-interaction --prefer-dist
       - run: npm ci
       - run: npm run build

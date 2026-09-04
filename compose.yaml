@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      secrets:
+        - composer_auth
     ports:
       - "8080:8080"
     environment:
@@ -34,3 +37,7 @@ services:
 
 volumes:
   postgres-data:
+
+secrets:
+  composer_auth:
+    file: ./auth.json

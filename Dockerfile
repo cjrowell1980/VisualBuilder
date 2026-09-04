@@ -8,8 +8,10 @@ RUN npm run build
 
 FROM composer:2 AS dependencies
 WORKDIR /app
+ENV COMPOSER_HOME=/tmp/composer
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+RUN --mount=type=secret,id=composer_auth,target=/tmp/composer/auth.json \
+    composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
 FROM php:8.4-fpm-alpine
 RUN apk add --no-cache libpq-dev icu-dev nginx supervisor \
