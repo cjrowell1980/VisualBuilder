@@ -76,6 +76,13 @@ class VisualBuilderTest extends TestCase
             'type' => 'belongsTo',
             'foreign_key' => 'parent_id',
         ]);
+        $role = $iteration->models()->create(['name' => 'Role', 'table_name' => 'roles']);
+        $role->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+        $model->relationships()->create([
+            'target_model_id' => $role->id,
+            'name' => 'roles',
+            'type' => 'belongsToMany',
+        ]);
         $page = $iteration->pages()->create([
             'model_definition_id' => $model->id,
             'name' => 'Customers',
@@ -114,12 +121,20 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
         $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
-        $migrationPath = Storage::disk('local')->files('generated/crm/iteration-1/database/migrations')[0];
+        $migrationPath = collect(Storage::disk('local')->files('generated/crm/iteration-1/database/migrations'))
+            ->first(fn (string $path): bool => str_contains($path, 'create_customers_table'));
+        $this->assertNotNull($migrationPath);
         $migrationSource = Storage::disk('local')->get($migrationPath);
+        $pivotPath = collect(Storage::disk('local')->files('generated/crm/iteration-1/database/migrations'))
+            ->first(fn (string $path): bool => str_contains($path, 'create_customer_role_table'));
+        $this->assertNotNull($pivotPath);
+        $pivotSource = Storage::disk('local')->get($pivotPath);
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
         $this->assertStringContainsString("string('email')->index()->unique()", $migrationSource);
+        $this->assertStringContainsString("foreignId('customer_id')->constrained('customers')", $pivotSource);
+        $this->assertStringContainsString("foreignId('role_id')->constrained('roles')", $pivotSource);
         $this->assertStringContainsString("return ['records' => Customer::query()->latest()->get()]", $pageSource);
         $this->assertStringContainsString('@forelse ($records as $record)', $pageSource);
         $createSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/create.blade.php');

@@ -23,11 +23,19 @@ class LaravelArtifactGenerator
         Storage::disk('local')->deleteDirectory($root);
 
         $files = [];
+        $generatedPivots = [];
         foreach ($iteration->models as $model) {
             $files[] = $this->write($root, "app/Models/{$model->name}.php", $this->model($model));
             $files[] = $this->write($root, 'database/migrations/'.now()->format('Y_m_d_His').'_create_'.$model->table_name.'_table.php', $this->migration($model));
             if ($iteration->project->template !== 'application') {
                 $files[] = $this->write($root, "app/Http/Controllers/Api/{$model->name}Controller.php", $this->apiController($model));
+            }
+            foreach ($model->relationships->where('type', 'belongsToMany') as $relationship) {
+                $pivot = $this->pivotName($model, $relationship->target);
+                if (! in_array($pivot, $generatedPivots, true)) {
+                    $files[] = $this->write($root, 'database/migrations/'.now()->format('Y_m_d_His').'_create_'.$pivot.'_table.php', $this->pivotMigration($model, $relationship, $pivot));
+                    $generatedPivots[] = $pivot;
+                }
             }
         }
 
@@ -123,6 +131,12 @@ PHP;
         $arguments = "{$relationship->target->name}::class";
         if ($relationship->type === 'belongsTo' && $relationship->foreign_key) {
             $arguments .= ", '{$relationship->foreign_key}'";
+        } elseif ($relationship->type === 'belongsToMany') {
+            $sourceKey = Str::snake(Str::singular($relationship->source->name)).'_id';
+            $targetKey = $relationship->source_model_id === $relationship->target_model_id
+                ? Str::snake(Str::singular($relationship->name)).'_id'
+                : Str::snake(Str::singular($relationship->target->name)).'_id';
+            $arguments .= ", '{$this->pivotName($relationship->source, $relationship->target)}', '{$sourceKey}', '{$targetKey}'";
         }
 
         return <<<PHP
@@ -130,6 +144,48 @@ PHP;
     {
         return \$this->{$relationship->type}({$arguments});
     }
+PHP;
+    }
+
+    private function pivotName(ModelDefinition $source, ModelDefinition $target): string
+    {
+        return collect([
+            Str::snake(Str::singular($source->name)),
+            Str::snake(Str::singular($target->name)),
+        ])->sort()->implode('_');
+    }
+
+    private function pivotMigration(ModelDefinition $source, ModelRelationship $relationship, string $pivot): string
+    {
+        $target = $relationship->target;
+        $sourceKey = Str::snake(Str::singular($source->name)).'_id';
+        $targetKey = $source->id === $target->id
+            ? Str::snake(Str::singular($relationship->name)).'_id'
+            : Str::snake(Str::singular($target->name)).'_id';
+
+        return <<<PHP
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('{$pivot}', function (Blueprint \$table) {
+            \$table->foreignId('{$sourceKey}')->constrained('{$source->table_name}')->cascadeOnDelete();
+            \$table->foreignId('{$targetKey}')->constrained('{$target->table_name}')->cascadeOnDelete();
+            \$table->unique(['{$sourceKey}', '{$targetKey}']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('{$pivot}');
+    }
+};
 PHP;
     }
 
