@@ -2,6 +2,8 @@
 
 use App\Models\BuildIteration;
 use App\Models\BuilderProject;
+use App\Models\ModelField;
+use App\Services\Debugging\IterationValidator;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use Illuminate\Support\Str;
@@ -134,9 +136,16 @@ new class extends Component {
         $page = $this->iteration()->pages()->findOrFail($this->selectedPageId);
         $fieldId = null;
         if ($this->controlFieldId) {
-            $fieldId = $this->iteration()->models()->whereHas('fields', fn ($query) => $query->whereKey($this->controlFieldId))->exists()
-                ? $this->controlFieldId
-                : abort(404);
+            $field = ModelField::query()
+                ->whereKey($this->controlFieldId)
+                ->whereHas('modelDefinition', fn ($query) => $query->where('build_iteration_id', $this->iteration()->id))
+                ->firstOrFail();
+            if ($page->model_definition_id && $field->model_definition_id !== $page->model_definition_id) {
+                $this->addError('controlFieldId', 'Choose a field belonging to the page model.');
+
+                return;
+            }
+            $fieldId = $field->id;
         }
         $data = $this->validate([
             'controlType' => ['required', Rule::in(['heading', 'text', 'input', 'textarea', 'select', 'checkbox', 'button', 'table'])],
@@ -155,6 +164,11 @@ new class extends Component {
     {
         $result = $generator->generate($this->iteration());
         $this->generatedPath = $result['path'];
+    }
+
+    public function runValidation(IterationValidator $validator): void
+    {
+        $validator->run($this->iteration());
     }
 
     public function createIteration(IterationCloner $cloner): void
@@ -178,11 +192,11 @@ new class extends Component {
 
     public function with(): array
     {
-        $iteration = $this->iteration()->load('models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins');
+        $iteration = $this->iteration()->load('models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins', 'runs');
         $this->selectedModelId ??= $iteration->models->first()?->id;
         $this->selectedPageId ??= $iteration->pages->first()?->id;
 
-        return ['iteration' => $iteration];
+        return ['iteration' => $iteration, 'latestRun' => $iteration->runs->first()];
     }
 
     private function iteration(): BuildIteration
@@ -242,8 +256,8 @@ new class extends Component {
             <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Control inspector</flux:heading><form wire:submit="addControl" class="mt-4 space-y-3"><flux:select wire:model="controlType" label="Control">@foreach(['heading','text','input','textarea','select','checkbox','button','table'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="controlLabel" label="Label" placeholder="Customer name" /><flux:select wire:model="controlFieldId" label="Bound field"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)@foreach($model->fields as $field)<flux:select.option value="{{ $field->id }}">{{ $model->name }} · {{ $field->name }}</flux:select.option>@endforeach @endforeach</flux:select><flux:button type="submit" class="w-full" :disabled="!$selectedPageId">Add to canvas</flux:button></form></aside>
         </div>
     @elseif ($mode === 'preview')
-        <div class="rounded-xl border border-zinc-200 bg-white p-10 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Iteration preview</flux:heading><flux:text class="mt-2">{{ $iteration->models->count() }} models, {{ $iteration->pages->count() }} pages and {{ $iteration->pages->sum(fn($page) => $page->controls->count()) }} controls are ready for generation.</flux:text><flux:button wire:click="generate" variant="primary" class="mt-6">Generate review bundle</flux:button></div>
+        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]"><div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><div class="flex items-start justify-between gap-4"><div><flux:heading size="lg">Debug readiness</flux:heading><flux:text class="mt-2">{{ $iteration->models->count() }} models, {{ $iteration->pages->count() }} pages and {{ $iteration->pages->sum(fn($page) => $page->controls->count()) }} controls.</flux:text></div><flux:button wire:click="runValidation" variant="primary" icon="play">Run validation</flux:button></div>@if($latestRun)<div class="mt-7 space-y-3">@foreach($latestRun->checks ?? [] as $check)<flux:callout :variant="$check['level'] === 'success' ? 'success' : 'danger'" :icon="$check['level'] === 'success' ? 'check-circle' : 'x-circle'" :heading="$check['label']"><flux:callout.text>{{ $check['message'] }}</flux:callout.text></flux:callout>@endforeach</div>@else<div class="mt-8 rounded-lg border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700"><flux:text>No validation run yet.</flux:text></div>@endif</div><aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$latestRun?->status === 'passed' ? 'green' : ($latestRun?->status === 'failed' ? 'red' : 'zinc')">{{ $latestRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge>Pending</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$latestRun?->status !== 'passed'">Generate review bundle</flux:button></aside></div>
     @else
-        <div class="rounded-xl border border-zinc-200 bg-white p-10 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish iteration</flux:heading><flux:text class="mt-2">Generation produces a reviewable bundle first. Git, ZIP and Docker publishing are enabled in the packaging phase after a successful debug run.</flux:text></div>
+        <div class="rounded-xl border border-zinc-200 bg-white p-10 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish iteration</flux:heading><flux:text class="mt-2">Generation produces a reviewable bundle first. Git, ZIP and Docker publishing unlock after validation and runtime tests pass.</flux:text><flux:button class="mt-6" variant="primary" disabled>Package release</flux:button></div>
     @endif
 </div>

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\BuilderProject;
 use App\Models\User;
+use App\Services\Debugging\IterationValidator;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -161,5 +162,30 @@ class VisualBuilderTest extends TestCase
         $this->assertCount(1, $copy->pages->first()->controls);
         $this->assertCount(1, $copy->plugins);
         $this->assertNotSame($field->id, $copy->models->firstWhere('name', 'Contact')->fields->first()->id);
+    }
+
+    public function test_validation_run_blocks_incomplete_designs_and_passes_complete_ones(): void
+    {
+        $user = User::factory()->create();
+        $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm']);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+
+        $failed = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('failed', $failed->status);
+
+        $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $field = $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+        $page = $iteration->pages()->create([
+            'model_definition_id' => $model->id,
+            'name' => 'Customers',
+            'slug' => 'customers',
+            'page_type' => 'index',
+        ]);
+        $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+
+        $passed = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('passed', $passed->status);
+        $this->assertNotEmpty($passed->checks);
+        $this->assertDatabaseCount('build_runs', 2);
     }
 }
