@@ -401,6 +401,18 @@ class VisualBuilderTest extends TestCase
         $this->assertContains(['npm', 'install', 'sortablejs@^1.15'], $runner->commands);
         $this->assertContains(['npm', 'run', 'build'], $runner->commands);
 
+        file_put_contents($outputPath.DIRECTORY_SEPARATOR.'.env', 'SECRET=do-not-package');
+        mkdir($outputPath.DIRECTORY_SEPARATOR.'node_modules', recursive: true);
+        file_put_contents($outputPath.DIRECTORY_SEPARATOR.'node_modules'.DIRECTORY_SEPARATOR.'temporary.js', 'ignored');
+        $applicationPackage = app(IterationPackager::class)->zipApplication($iteration->fresh());
+        $this->assertSame('application-zip', $applicationPackage->format);
+        $archive = new \ZipArchive;
+        $this->assertTrue($archive->open($applicationPackage->path));
+        $this->assertFalse($archive->locateName('.env'));
+        $this->assertFalse($archive->locateName('node_modules/temporary.js'));
+        $this->assertNotFalse($archive->locateName('artisan'));
+        $archive->close();
+
         $second = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
         $this->assertSame('failed', $second->status);
         $this->assertStringContainsString('already exists', $second->output);
@@ -478,6 +490,7 @@ final class FakeProcessRunner implements ProcessRunner
             $outputPath = $workingDirectory.DIRECTORY_SEPARATOR.$command[2];
             mkdir($outputPath.DIRECTORY_SEPARATOR.'routes', recursive: true);
             file_put_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php', "<?php\n");
+            file_put_contents($outputPath.DIRECTORY_SEPARATOR.'artisan', "<?php\n");
         }
 
         $output = $command === ['git', 'remote', 'get-url', 'origin']
