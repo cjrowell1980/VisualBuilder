@@ -26,6 +26,9 @@ class LaravelArtifactGenerator
         foreach ($iteration->models as $model) {
             $files[] = $this->write($root, "app/Models/{$model->name}.php", $this->model($model));
             $files[] = $this->write($root, 'database/migrations/'.now()->format('Y_m_d_His').'_create_'.$model->table_name.'_table.php', $this->migration($model));
+            if ($iteration->project->template !== 'application') {
+                $files[] = $this->write($root, "app/Http/Controllers/Api/{$model->name}Controller.php", $this->apiController($model));
+            }
         }
 
         foreach ($iteration->pages as $page) {
@@ -33,6 +36,9 @@ class LaravelArtifactGenerator
         }
         if ($iteration->pages->isNotEmpty()) {
             $files[] = $this->write($root, 'routes/generated.php', $this->routes($iteration));
+        }
+        if ($iteration->project->template !== 'application' && $iteration->models->isNotEmpty()) {
+            $files[] = $this->write($root, 'routes/generated-api.php', $this->apiRoutes($iteration));
         }
         if ($iteration->project->docker_enabled) {
             $files[] = $this->write($root, 'Dockerfile', $this->dockerfile($iteration));
@@ -318,6 +324,79 @@ BLADE;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function (): void {
+{$routes}
+});
+PHP;
+    }
+
+    private function apiController(ModelDefinition $model): string
+    {
+        $variable = Str::camel($model->name);
+        $rules = $model->fields->mapWithKeys(function ($field): array {
+            $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
+
+            return [$field->name => $rules];
+        })->all();
+        $rulesCode = var_export($rules, true);
+
+        return <<<PHP
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\{$model->name};
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class {$model->name}Controller extends Controller
+{
+    public function index(): JsonResponse
+    {
+        return response()->json({$model->name}::query()->latest()->paginate());
+    }
+
+    public function store(Request \$request): JsonResponse
+    {
+        \${$variable} = {$model->name}::query()->create(\$request->validate({$rulesCode}));
+
+        return response()->json(\${$variable}, 201);
+    }
+
+    public function show({$model->name} \${$variable}): JsonResponse
+    {
+        return response()->json(\${$variable});
+    }
+
+    public function update(Request \$request, {$model->name} \${$variable}): JsonResponse
+    {
+        \${$variable}->update(\$request->validate({$rulesCode}));
+
+        return response()->json(\${$variable}->refresh());
+    }
+
+    public function destroy({$model->name} \${$variable}): JsonResponse
+    {
+        \${$variable}->delete();
+
+        return response()->json(null, 204);
+    }
+}
+PHP;
+    }
+
+    private function apiRoutes(BuildIteration $iteration): string
+    {
+        $controllers = $iteration->models->map(fn (ModelDefinition $model): string => "use App\\Http\\Controllers\\Api\\{$model->name}Controller;")->implode("\n");
+        $routes = $iteration->models->map(fn (ModelDefinition $model): string => "Route::apiResource('{$model->table_name}', {$model->name}Controller::class);")->implode("\n");
+
+        return <<<PHP
+<?php
+
+{$controllers}
+use Illuminate\Support\Facades\Route;
+
+Route::middleware('auth:sanctum')->group(function (): void {
 {$routes}
 });
 PHP;

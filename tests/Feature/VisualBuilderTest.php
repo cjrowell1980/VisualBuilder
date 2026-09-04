@@ -66,7 +66,7 @@ class VisualBuilderTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'docker_enabled' => true]);
+        $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'template' => 'application-api', 'docker_enabled' => true]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
         $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
         $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true]);
@@ -109,6 +109,8 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/Dockerfile');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/compose.yaml');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/publish-image.yml');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/routes/generated-api.php');
         $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
         $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
@@ -124,16 +126,20 @@ class VisualBuilderTest extends TestCase
         $editSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/edit.blade.php');
         $showSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/show.blade.php');
         $routesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated.php');
+        $apiRoutesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated-api.php');
         $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
         $this->assertStringContainsString('findOrFail($this->recordId)->update($validated)', $editSource);
         $this->assertStringNotContainsString('function save', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
+        $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
         foreach ([
             'generated/crm/iteration-1/app/Models/Customer.php',
             $migrationPath,
             'generated/crm/iteration-1/resources/views/pages/customers/create.blade.php',
             'generated/crm/iteration-1/resources/views/pages/customers/edit.blade.php',
             'generated/crm/iteration-1/resources/views/pages/customers/show.blade.php',
+            'generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php',
+            'generated/crm/iteration-1/routes/generated-api.php',
         ] as $generatedPhp) {
             $lint = new Process([PHP_BINARY, '-l', Storage::disk('local')->path($generatedPhp)]);
             $lint->run();
@@ -374,6 +380,7 @@ class VisualBuilderTest extends TestCase
             'name' => 'Customer Portal',
             'slug' => 'customer-portal',
             'database_driver' => 'sqlite',
+            'template' => 'application-api',
             'output_path' => $outputPath,
         ]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
@@ -400,6 +407,8 @@ class VisualBuilderTest extends TestCase
         $this->assertContains(['composer', 'require', 'spatie/laravel-permission:^7.0'], $runner->commands);
         $this->assertContains(['npm', 'install', 'sortablejs@^1.15'], $runner->commands);
         $this->assertContains(['npm', 'run', 'build'], $runner->commands);
+        $this->assertContains([PHP_BINARY, 'artisan', 'install:api', '--no-interaction'], $runner->commands);
+        $this->assertStringContainsString("require __DIR__.'/generated-api.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'api.php'));
 
         file_put_contents($outputPath.DIRECTORY_SEPARATOR.'.env', 'SECRET=do-not-package');
         mkdir($outputPath.DIRECTORY_SEPARATOR.'node_modules', recursive: true);
@@ -491,6 +500,9 @@ final class FakeProcessRunner implements ProcessRunner
             mkdir($outputPath.DIRECTORY_SEPARATOR.'routes', recursive: true);
             file_put_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php', "<?php\n");
             file_put_contents($outputPath.DIRECTORY_SEPARATOR.'artisan', "<?php\n");
+        }
+        if (in_array('install:api', $command, true)) {
+            file_put_contents($workingDirectory.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'api.php', "<?php\n");
         }
 
         $output = $command === ['git', 'remote', 'get-url', 'origin']

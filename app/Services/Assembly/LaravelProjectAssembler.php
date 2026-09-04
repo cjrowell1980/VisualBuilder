@@ -43,6 +43,15 @@ class LaravelProjectAssembler
                 throw new RuntimeException('Laravel scaffolding failed: '.$scaffold['output']);
             }
 
+            $outputs = [$scaffold['output']];
+            if ($iteration->project->template !== 'application') {
+                $api = $this->runner->run([PHP_BINARY, 'artisan', 'install:api', '--no-interaction'], $outputPath);
+                $outputs[] = "API installation:\n{$api['output']}";
+                if (! $api['successful']) {
+                    throw new RuntimeException('Laravel API installation failed: '.$api['output']);
+                }
+            }
+
             $source = Storage::disk('local')->path("generated/{$iteration->project->slug}/iteration-{$iteration->number}");
             if (! is_file($source.DIRECTORY_SEPARATOR.'visual-builder.json')) {
                 throw new RuntimeException('Generate the iteration before assembling the project.');
@@ -65,7 +74,6 @@ class LaravelProjectAssembler
                 [[PHP_BINARY, 'artisan', 'migrate', '--force'], 'Database migration'],
                 [[PHP_BINARY, 'artisan', 'test'], 'Application tests'],
             ];
-            $outputs = [$scaffold['output']];
             foreach ($commands as [$command, $label]) {
                 $result = $this->runner->run($command, $outputPath);
                 $outputs[] = "{$label}:\n{$result['output']}";
@@ -117,6 +125,19 @@ class LaravelProjectAssembler
         $require = "require __DIR__.'/generated.php';";
         if (! str_contains($contents, $require)) {
             $this->files->append($routesPath, PHP_EOL.$require.PHP_EOL);
+        }
+
+        $generatedApi = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'generated-api.php';
+        if (is_file($generatedApi)) {
+            $apiRoutes = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'api.php';
+            if (! is_file($apiRoutes)) {
+                throw new RuntimeException('Laravel API routes were not installed.');
+            }
+            $apiContents = $this->files->get($apiRoutes);
+            $apiRequire = "require __DIR__.'/generated-api.php';";
+            if (! str_contains($apiContents, $apiRequire)) {
+                $this->files->append($apiRoutes, PHP_EOL.$apiRequire.PHP_EOL);
+            }
         }
     }
 }
