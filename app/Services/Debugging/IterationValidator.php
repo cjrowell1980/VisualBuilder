@@ -5,7 +5,6 @@ namespace App\Services\Debugging;
 use App\Models\BuildIteration;
 use App\Models\BuildRun;
 use App\Models\ModelDefinition;
-use App\Models\ModelRelationship;
 
 class IterationValidator
 {
@@ -26,9 +25,9 @@ class IterationValidator
             'Every model must use a unique table name.'
         );
         $checks[] = $this->check(
-            $this->belongsToGraphIsAcyclic($iteration),
+            $this->databaseGraphIsAcyclic($iteration),
             'Migration dependencies',
-            'BelongsTo relationships must not contain a circular table dependency.'
+            'Database relationships must not contain a circular table dependency.'
         );
 
         foreach ($iteration->models as $model) {
@@ -84,16 +83,12 @@ class IterationValidator
         return ['level' => $passes ? 'success' : 'error', 'label' => $label, 'message' => $message];
     }
 
-    private function belongsToGraphIsAcyclic(BuildIteration $iteration): bool
+    private function databaseGraphIsAcyclic(BuildIteration $iteration): bool
     {
         $remaining = $iteration->models->keyBy('id');
         while ($remaining->isNotEmpty()) {
-            $next = $remaining->first(function (ModelDefinition $model) use ($remaining): bool {
-                return $model->relationships
-                    ->where('type', 'belongsTo')
-                    ->every(fn (ModelRelationship $relationship): bool => $relationship->target_model_id === $model->id
-                        || ! $remaining->has($relationship->target_model_id));
-            });
+            $next = $remaining->first(fn (ModelDefinition $model): bool => collect($this->databaseDependencyIds($model, $iteration))
+                ->every(fn (int $dependencyId): bool => ! $remaining->has($dependencyId)));
             if (! $next) {
                 return false;
             }
@@ -101,5 +96,24 @@ class IterationValidator
         }
 
         return true;
+    }
+
+    /** @return list<int> */
+    private function databaseDependencyIds(ModelDefinition $model, BuildIteration $iteration): array
+    {
+        $dependencies = [];
+        foreach ($model->relationships->where('type', 'belongsTo') as $relationship) {
+            $dependencies[(int) $relationship->target_model_id] = (int) $relationship->target_model_id;
+        }
+
+        foreach ($iteration->models as $source) {
+            if ($source->relationships->whereIn('type', ['hasOne', 'hasMany'])->where('target_model_id', $model->id)->isNotEmpty()) {
+                $dependencies[(int) $source->id] = (int) $source->id;
+            }
+        }
+
+        unset($dependencies[(int) $model->id]);
+
+        return array_values($dependencies);
     }
 }

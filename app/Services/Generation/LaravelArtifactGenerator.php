@@ -36,7 +36,7 @@ class LaravelArtifactGenerator
         }
         foreach ($this->migrationOrder($iteration) as $model) {
             $timestamp = $migrationTime->addSeconds($migrationSequence++)->format('Y_m_d_His');
-            $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$model->table_name.'_table.php', $this->migration($model));
+            $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$model->table_name.'_table.php', $this->migration($model, $iteration));
         }
         foreach ($iteration->models as $model) {
             foreach ($model->relationships->where('type', 'belongsToMany') as $relationship) {
@@ -109,14 +109,10 @@ class LaravelArtifactGenerator
         $remaining = $iteration->models->keyBy('id');
         $ordered = [];
         while ($remaining->isNotEmpty()) {
-            $next = $remaining->first(function (ModelDefinition $model) use ($remaining): bool {
-                return $model->relationships
-                    ->where('type', 'belongsTo')
-                    ->every(fn (ModelRelationship $relationship): bool => $relationship->target_model_id === $model->id
-                        || ! $remaining->has($relationship->target_model_id));
-            });
+            $next = $remaining->first(fn (ModelDefinition $model): bool => collect($this->databaseDependencyIds($model, $iteration))
+                ->every(fn (int $dependencyId): bool => ! $remaining->has($dependencyId)));
             if (! $next) {
-                throw new \RuntimeException('Circular belongsTo relationships must be redesigned before migrations can be generated.');
+                throw new \RuntimeException('Circular database relationships must be redesigned before migrations can be generated.');
             }
             $ordered[] = $next;
             $remaining->forget($next->id);
@@ -228,7 +224,7 @@ return new class extends Migration
 PHP;
     }
 
-    private function migration(ModelDefinition $model): string
+    private function migration(ModelDefinition $model, BuildIteration $iteration): string
     {
         $columns = $model->fields->map(function ($field): string {
             $method = match ($field->type) {
@@ -245,8 +241,19 @@ PHP;
         })->implode("\n");
         $foreignKeys = $model->relationships
             ->where('type', 'belongsTo')
-            ->map(fn (ModelRelationship $relationship): string => "            \$table->foreignId('{$relationship->foreign_key}')->constrained('{$relationship->target->table_name}');")
-            ->implode("\n");
+            ->mapWithKeys(fn (ModelRelationship $relationship): array => [
+                $relationship->foreign_key => "            \$table->foreignId('{$relationship->foreign_key}')->constrained('{$relationship->target->table_name}');",
+            ]);
+        foreach ($iteration->models as $source) {
+            foreach ($source->relationships->whereIn('type', ['hasOne', 'hasMany'])->where('target_model_id', $model->id) as $relationship) {
+                $foreignKey = Str::snake(Str::singular($source->name)).'_id';
+                if (! $foreignKeys->has($foreignKey)) {
+                    $unique = $relationship->type === 'hasOne' ? '->unique()' : '';
+                    $foreignKeys->put($foreignKey, "            \$table->foreignId('{$foreignKey}'){$unique}->constrained('{$source->table_name}');");
+                }
+            }
+        }
+        $foreignKeys = $foreignKeys->implode("\n");
         $foreignKeys = $foreignKeys === '' ? '' : $foreignKeys."\n";
         $timestamps = $model->getAttribute('timestamps') ? "\n            \$table->timestamps();" : '';
         $softDeletes = $model->soft_deletes ? "\n            \$table->softDeletes();" : '';
@@ -275,6 +282,25 @@ return new class extends Migration
     }
 };
 PHP;
+    }
+
+    /** @return list<int> */
+    private function databaseDependencyIds(ModelDefinition $model, BuildIteration $iteration): array
+    {
+        $dependencies = [];
+        foreach ($model->relationships->where('type', 'belongsTo') as $relationship) {
+            $dependencies[(int) $relationship->target_model_id] = (int) $relationship->target_model_id;
+        }
+
+        foreach ($iteration->models as $source) {
+            if ($source->relationships->whereIn('type', ['hasOne', 'hasMany'])->where('target_model_id', $model->id)->isNotEmpty()) {
+                $dependencies[(int) $source->id] = (int) $source->id;
+            }
+        }
+
+        unset($dependencies[(int) $model->id]);
+
+        return array_values($dependencies);
     }
 
     private function migrationDefault(ModelField $field): string

@@ -89,6 +89,12 @@ class VisualBuilderTest extends TestCase
             'type' => 'belongsTo',
             'foreign_key' => 'primary_role_id',
         ]);
+        $note = $iteration->models()->create(['name' => 'Note', 'table_name' => 'notes']);
+        $note->fields()->create(['name' => 'body', 'label' => 'Body', 'type' => 'text']);
+        $model->relationships()->create(['target_model_id' => $note->id, 'name' => 'notes', 'type' => 'hasMany']);
+        $profile = $iteration->models()->create(['name' => 'Profile', 'table_name' => 'profiles']);
+        $profile->fields()->create(['name' => 'bio', 'label' => 'Biography', 'type' => 'text']);
+        $model->relationships()->create(['target_model_id' => $profile->id, 'name' => 'profile', 'type' => 'hasOne']);
         $page = $iteration->pages()->create([
             'model_definition_id' => $model->id,
             'name' => 'Customers',
@@ -147,11 +153,19 @@ class VisualBuilderTest extends TestCase
         $orderedMigrations = Storage::disk('local')->files('generated/crm/iteration-1/database/migrations');
         sort($orderedMigrations);
         $roleMigrationPath = collect($orderedMigrations)->first(fn (string $path): bool => str_contains($path, 'create_roles_table'));
+        $noteMigrationPath = collect($orderedMigrations)->first(fn (string $path): bool => str_contains($path, 'create_notes_table'));
+        $profileMigrationPath = collect($orderedMigrations)->first(fn (string $path): bool => str_contains($path, 'create_profiles_table'));
         $this->assertNotNull($roleMigrationPath);
+        $this->assertNotNull($noteMigrationPath);
+        $this->assertNotNull($profileMigrationPath);
         $roleMigrationSource = Storage::disk('local')->get($roleMigrationPath);
+        $noteMigrationSource = Storage::disk('local')->get($noteMigrationPath);
+        $profileMigrationSource = Storage::disk('local')->get($profileMigrationPath);
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
         $this->assertLessThan(array_search($migrationPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
+        $this->assertLessThan(array_search($noteMigrationPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
+        $this->assertLessThan(array_search($profileMigrationPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString('use SoftDeletes;', $roleModelSource);
@@ -162,6 +176,8 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString("string('email')->default('unknown@example.com')->index()->unique()", $migrationSource);
         $this->assertStringContainsString("foreignId('customer_id')->constrained('customers')", $pivotSource);
         $this->assertStringContainsString("foreignId('role_id')->constrained('roles')", $pivotSource);
+        $this->assertStringContainsString("foreignId('customer_id')->constrained('customers')", $noteMigrationSource);
+        $this->assertStringContainsString("foreignId('customer_id')->unique()->constrained('customers')", $profileMigrationSource);
         $this->assertStringContainsString("return ['records' => Customer::query()->latest()->get()]", $pageSource);
         $this->assertStringContainsString('@forelse ($records as $record)', $pageSource);
         $createSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/create.blade.php');
@@ -192,6 +208,8 @@ class VisualBuilderTest extends TestCase
         foreach ([
             'generated/crm/iteration-1/app/Models/Customer.php',
             $migrationPath,
+            $noteMigrationPath,
+            $profileMigrationPath,
             'generated/crm/iteration-1/resources/views/pages/customers/create.blade.php',
             'generated/crm/iteration-1/resources/views/pages/customers/edit.blade.php',
             'generated/crm/iteration-1/resources/views/pages/customers/show.blade.php',
