@@ -178,6 +178,7 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('findOrFail($this->recordId)->update($validated)', $editSource);
         $this->assertStringContainsString("Rule::unique('customers', 'email')->ignore(\$this->recordId)", $editSource);
         $this->assertStringNotContainsString('function save', $showSource);
+        $this->assertStringContainsString('label="Email" readonly', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
         $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
         $apiControllerSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');

@@ -387,19 +387,20 @@ BLADE;
 
             return "        <flux:select.option value=\"{$value}\">{$optionLabel}</flux:select.option>";
         })->implode("\n");
+        $readOnly = $page->page_type === 'show';
         $markup = match ($control->control_type) {
             'heading' => "    <flux:heading>{$label}</flux:heading>",
             'text' => "    <flux:text>{$label}</flux:text>",
-            'textarea' => "    <flux:textarea wire:model=\"{$field}\" label=\"{$label}\" />",
-            'select' => "    <flux:select wire:model=\"{$field}\" label=\"{$label}\">\n{$options}\n    </flux:select>",
-            'checkbox' => "    <flux:checkbox wire:model=\"{$field}\" label=\"{$label}\" />",
+            'textarea' => "    <flux:textarea wire:model=\"{$field}\" label=\"{$label}\"".($readOnly ? ' readonly' : '').' />',
+            'select' => "    <flux:select wire:model=\"{$field}\" label=\"{$label}\"".($readOnly ? ' disabled' : '').">\n{$options}\n    </flux:select>",
+            'checkbox' => "    <flux:checkbox wire:model=\"{$field}\" label=\"{$label}\"".($readOnly ? ' disabled' : '').' />',
             'button' => $hasSave
                 ? "    <flux:button wire:click=\"save\" variant=\"primary\">{$label}</flux:button>"
                 : "    <flux:button variant=\"primary\">{$label}</flux:button>",
             'table' => $page->page_type === 'index' && $page->modelDefinition
                 ? $this->table($page)
                 : "    <div class=\"overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700\"><div class=\"p-4\">{$label}</div></div>",
-            default => "    <flux:input wire:model=\"{$field}\" label=\"{$label}\" />",
+            default => "    <flux:input wire:model=\"{$field}\" label=\"{$label}\"".($readOnly ? ' readonly' : '').' />',
         };
         $width = match ($control->width) {
             'half' => 'max-w-2xl',
