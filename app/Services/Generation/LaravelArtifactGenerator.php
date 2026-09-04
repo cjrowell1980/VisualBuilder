@@ -593,7 +593,7 @@ PHP;
         });
         if ($iteration->project->template !== 'application') {
             $assertions = $assertions->concat($iteration->models->map(
-                fn (ModelDefinition $model): string => "        \$this->assertTrue(Route::has('{$model->table_name}.index'));"
+                fn (ModelDefinition $model): string => "        \$this->assertTrue(Route::has('api.{$model->table_name}.index'));"
             ));
         }
         $assertionCode = $assertions->implode("\n");
@@ -627,7 +627,7 @@ PHP;
 {$controllers}
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware('auth:sanctum')->name('api.')->group(function (): void {
 {$routes}
 });
 PHP;

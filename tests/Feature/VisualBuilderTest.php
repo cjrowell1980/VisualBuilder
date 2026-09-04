@@ -181,13 +181,14 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('label="Email" readonly', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
         $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
+        $this->assertStringContainsString("->name('api.')", $apiRoutesSource);
         $apiControllerSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
         $this->assertStringContainsString("Rule::unique('customers', 'email')", $apiControllerSource);
         $this->assertStringContainsString("Rule::unique('customers', 'email')->ignore(\$customer)", $apiControllerSource);
         $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email'])", $schemaTestSource);
         $this->assertStringContainsString("Schema::hasColumns('roles', ['id', 'name'])", $schemaTestSource);
         $this->assertStringContainsString("Route::has('customers.create')", $routesTestSource);
-        $this->assertStringContainsString("Route::has('customers.index')", $routesTestSource);
+        $this->assertStringContainsString("Route::has('api.customers.index')", $routesTestSource);
         foreach ([
             'generated/crm/iteration-1/app/Models/Customer.php',
             $migrationPath,
