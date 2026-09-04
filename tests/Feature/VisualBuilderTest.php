@@ -7,12 +7,15 @@ use App\Models\BuilderProject;
 use App\Models\User;
 use App\Services\Assembly\LaravelProjectAssembler;
 use App\Services\Debugging\IterationValidator;
+use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use App\Services\Packaging\IterationPackager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use Native\Desktop\Facades\ChildProcess;
+use Native\Desktop\Facades\Shell;
 use Tests\TestCase;
 
 class VisualBuilderTest extends TestCase
@@ -239,6 +242,38 @@ class VisualBuilderTest extends TestCase
         $second = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
         $this->assertSame('failed', $second->status);
         $this->assertStringContainsString('already exists', $second->output);
+    }
+
+    public function test_preview_server_has_a_managed_native_lifecycle(): void
+    {
+        $processes = ChildProcess::fake();
+        $shell = Shell::fake();
+        $user = User::factory()->create();
+        $outputPath = storage_path('framework/testing/preview-app');
+        if (! is_dir($outputPath)) {
+            mkdir($outputPath, recursive: true);
+        }
+        touch($outputPath.DIRECTORY_SEPARATOR.'artisan');
+        $project = $user->builderProjects()->create([
+            'name' => 'Preview App',
+            'slug' => 'preview-app',
+            'output_path' => $outputPath,
+            'status' => 'assembled',
+        ]);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+        $manager = app(PreviewServerManager::class);
+
+        $run = $manager->start($iteration);
+        $this->assertSame('running', $run->status);
+        $processes->assertStarted(fn (array|string $cmd, string $alias, ?string $cwd, ?array $env, bool $persistent): bool => $alias === 'visual-builder-preview-'.$project->id
+            && $cwd === $outputPath && is_array($cmd) && in_array('serve', $cmd, true));
+
+        $manager->open($iteration);
+        $shell->assertOpenedExternal('http://127.0.0.1:'.(8100 + ($project->id % 500)));
+
+        $manager->stop($iteration);
+        $processes->assertStop('visual-builder-preview-'.$project->id);
+        $this->assertSame('stopped', $run->fresh()->status);
     }
 }
 

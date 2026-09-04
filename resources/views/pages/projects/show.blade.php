@@ -1,47 +1,75 @@
 <?php
 
-use App\Models\BuildIteration;
 use App\Models\BuilderProject;
+use App\Models\BuildIteration;
 use App\Models\ModelField;
+use App\Services\Assembly\LaravelProjectAssembler;
 use App\Services\Debugging\IterationValidator;
+use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use App\Services\Packaging\IterationPackager;
-use App\Services\Assembly\LaravelProjectAssembler;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     #[Locked]
     public BuilderProject $project;
 
     public string $mode = 'schema';
+
     public string $modelName = '';
+
     public string $fieldName = '';
+
     public string $fieldLabel = '';
+
     public string $fieldType = 'string';
+
     public string $fieldRules = '';
+
     public bool $fieldNullable = false;
+
     public bool $fieldIndexed = false;
+
     public bool $fieldUnique = false;
+
     public ?int $selectedModelId = null;
+
     public string $relationshipName = '';
+
     public string $relationshipType = 'belongsTo';
+
     public ?int $relationshipTargetId = null;
+
     public string $pageName = '';
+
     public string $pageSlug = '';
+
     public string $pageType = 'custom';
+
     public ?int $pageModelId = null;
+
     public ?int $selectedPageId = null;
+
     public string $controlType = 'input';
+
     public string $controlLabel = '';
+
     public ?int $controlFieldId = null;
+
     public ?string $generatedPath = null;
+
     public string $iterationName = '';
+
     public ?string $packagePath = null;
+
     public ?string $assemblyMessage = null;
+
+    public ?string $previewMessage = null;
 
     public function mount(BuilderProject $project): void
     {
@@ -187,6 +215,23 @@ new class extends Component {
         $this->assemblyMessage = $run->checks[0]['message'] ?? $run->output;
     }
 
+    public function startPreview(PreviewServerManager $preview): void
+    {
+        $run = $preview->start($this->iteration());
+        $this->previewMessage = $run->checks[0]['message'] ?? $run->output;
+    }
+
+    public function openPreview(PreviewServerManager $preview): void
+    {
+        $preview->open($this->iteration());
+    }
+
+    public function stopPreview(PreviewServerManager $preview): void
+    {
+        $preview->stop($this->iteration());
+        $this->previewMessage = 'Debugger stopped.';
+    }
+
     public function createIteration(IterationCloner $cloner): void
     {
         $data = $this->validate(['iterationName' => ['required', 'string', 'max:100']]);
@@ -216,6 +261,7 @@ new class extends Component {
             'iteration' => $iteration,
             'validationRun' => $iteration->runs->firstWhere('type', 'validation'),
             'assemblyRun' => $iteration->runs->firstWhere('type', 'assembly'),
+            'previewRun' => $iteration->runs->firstWhere('type', 'preview'),
         ];
     }
 
@@ -276,7 +322,15 @@ new class extends Component {
             <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Control inspector</flux:heading><form wire:submit="addControl" class="mt-4 space-y-3"><flux:select wire:model="controlType" label="Control">@foreach(['heading','text','input','textarea','select','checkbox','button','table'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="controlLabel" label="Label" placeholder="Customer name" /><flux:select wire:model="controlFieldId" label="Bound field"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)@foreach($model->fields as $field)<flux:select.option value="{{ $field->id }}">{{ $model->name }} · {{ $field->name }}</flux:select.option>@endforeach @endforeach</flux:select><flux:button type="submit" class="w-full" :disabled="!$selectedPageId">Add to canvas</flux:button></form></aside>
         </div>
     @elseif ($mode === 'preview')
-        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]"><div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><div class="flex items-start justify-between gap-4"><div><flux:heading size="lg">Debug readiness</flux:heading><flux:text class="mt-2">{{ $iteration->models->count() }} models, {{ $iteration->pages->count() }} pages and {{ $iteration->pages->sum(fn($page) => $page->controls->count()) }} controls.</flux:text></div><flux:button wire:click="runValidation" variant="primary" icon="play">Run validation</flux:button></div>@if($validationRun)<div class="mt-7 space-y-3">@foreach($validationRun->checks ?? [] as $check)<flux:callout :variant="$check['level'] === 'success' ? 'success' : 'danger'" :icon="$check['level'] === 'success' ? 'check-circle' : 'x-circle'" :heading="$check['label']"><flux:callout.text>{{ $check['message'] }}</flux:callout.text></flux:callout>@endforeach</div>@else<div class="mt-8 rounded-lg border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700"><flux:text>No validation run yet.</flux:text></div>@endif</div><aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$validationRun?->status === 'passed' ? 'green' : ($validationRun?->status === 'failed' ? 'red' : 'zinc')">{{ $validationRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge :color="$assemblyRun?->status === 'passed' ? 'green' : ($assemblyRun?->status === 'failed' ? 'red' : 'zinc')">{{ $assemblyRun?->status ?? 'Pending' }}</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$validationRun?->status !== 'passed'">Generate review bundle</flux:button></aside></div>
+        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
+            <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900">
+                <div class="flex items-start justify-between gap-4"><div><flux:heading size="lg">Debug and preview</flux:heading><flux:text class="mt-2">{{ $iteration->models->count() }} models, {{ $iteration->pages->count() }} pages and {{ $iteration->pages->sum(fn($page) => $page->controls->count()) }} controls.</flux:text></div><flux:button wire:click="runValidation" variant="primary" icon="play">Run validation</flux:button></div>
+                @if($validationRun)<div class="mt-7 space-y-3">@foreach($validationRun->checks ?? [] as $check)<flux:callout :variant="$check['level'] === 'success' ? 'success' : 'danger'" :icon="$check['level'] === 'success' ? 'check-circle' : 'x-circle'" :heading="$check['label']"><flux:callout.text>{{ $check['message'] }}</flux:callout.text></flux:callout>@endforeach</div>@else<div class="mt-8 rounded-lg border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700"><flux:text>No validation run yet.</flux:text></div>@endif
+                @if($previewMessage)<flux:callout class="mt-6" :variant="$previewRun?->status === 'failed' ? 'danger' : 'success'" heading="Debugger"><flux:callout.text>{{ $previewMessage }}</flux:callout.text></flux:callout>@endif
+                <div class="mt-6 flex flex-wrap gap-2"><flux:button wire:click="startPreview" icon="play" :disabled="$assemblyRun?->status !== 'passed' || $previewRun?->status === 'running'">Launch debugger</flux:button><flux:button wire:click="openPreview" icon="arrow-top-right-on-square" :disabled="$previewRun?->status !== 'running'">Open application</flux:button><flux:button wire:click="stopPreview" variant="danger" icon="stop" :disabled="$previewRun?->status !== 'running'">Stop</flux:button></div>
+            </div>
+            <aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$validationRun?->status === 'passed' ? 'green' : ($validationRun?->status === 'failed' ? 'red' : 'zinc')">{{ $validationRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge :color="$assemblyRun?->status === 'passed' ? 'green' : ($assemblyRun?->status === 'failed' ? 'red' : 'zinc')">{{ $assemblyRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Debugger</span><flux:badge :color="$previewRun?->status === 'running' ? 'green' : ($previewRun?->status === 'failed' ? 'red' : 'zinc')">{{ $previewRun?->status ?? 'Pending' }}</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$validationRun?->status !== 'passed'">Generate review bundle</flux:button></aside>
+        </div>
     @else
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
             <div class="space-y-6">
