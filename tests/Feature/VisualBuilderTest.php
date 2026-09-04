@@ -371,6 +371,7 @@ class VisualBuilderTest extends TestCase
             $field = $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
             $page = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Records', 'slug' => 'records', 'page_type' => 'index']);
             $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+            $page->controls()->create(['control_type' => 'table', 'label' => 'Records']);
             app(IterationValidator::class)->run($iteration);
             app(LaravelArtifactGenerator::class)->generate($iteration->fresh());
             $root = "generated/docker-{$driver}/iteration-1";
@@ -478,6 +479,7 @@ class VisualBuilderTest extends TestCase
             'page_type' => 'index',
         ]);
         $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+        $page->controls()->create(['control_type' => 'table', 'label' => 'Customers']);
 
         $passed = app(IterationValidator::class)->run($iteration);
         $this->assertSame('passed', $passed->status);
@@ -503,6 +505,33 @@ class VisualBuilderTest extends TestCase
 
         $this->assertSame('passed', $run->status);
         $this->assertSame('validated', $iteration->fresh()->status);
+    }
+
+    public function test_validation_enforces_dynamic_page_models_and_binding_scope(): void
+    {
+        $user = User::factory()->create();
+        $project = $user->builderProjects()->create(['name' => 'Portal', 'slug' => 'portal']);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+        $customer = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $customer->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+        $account = $iteration->models()->create(['name' => 'Account', 'table_name' => 'accounts']);
+        $accountField = $account->fields()->create(['name' => 'reference', 'label' => 'Reference', 'type' => 'string']);
+        $page = $iteration->pages()->create(['name' => 'Customers', 'slug' => 'customers', 'page_type' => 'index']);
+        $page->controls()->create(['control_type' => 'table', 'label' => 'Customers']);
+
+        $missingModel = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('failed', $missingModel->status);
+        $this->assertTrue(collect($missingModel->checks)->contains('message', 'Index pages require a model.'));
+
+        $page->update(['model_definition_id' => $customer->id]);
+        $wrongBinding = $page->controls()->create(['model_field_id' => $accountField->id, 'control_type' => 'input', 'label' => 'Reference']);
+        $invalidBinding = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('failed', $invalidBinding->status);
+        $this->assertTrue(collect($invalidBinding->checks)->contains('message', 'Every bound control must use a field from the page model.'));
+
+        $wrongBinding->delete();
+        $valid = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('passed', $valid->status);
     }
 
     public function test_assembler_creates_and_verifies_a_runnable_project_without_overwriting(): void
@@ -531,6 +560,7 @@ class VisualBuilderTest extends TestCase
             'page_type' => 'index',
         ]);
         $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+        $page->controls()->create(['control_type' => 'table', 'label' => 'Customers']);
         $iteration->plugins()->create(['package' => 'spatie/laravel-permission', 'constraint' => '^7.0', 'approved' => true]);
         $iteration->plugins()->create(['package' => 'sortablejs', 'constraint' => '^1.15', 'type' => 'npm', 'approved' => true]);
 

@@ -54,13 +54,29 @@ class IterationValidator
         foreach ($iteration->pages as $page) {
             $validBindings = $page->controls->every(function ($control) use ($page): bool {
                 return $control->model_field_id === null
-                    || $page->model_definition_id === null
-                    || $control->field->model_definition_id === $page->model_definition_id;
+                    || ($page->model_definition_id !== null
+                        && $control->field->model_definition_id === $page->model_definition_id);
             });
+            $requiresModel = in_array($page->page_type, ['index', 'create', 'edit', 'show'], true);
+            $hasModel = ! $requiresModel || $page->model_definition_id !== null;
+            $hasPurposeControl = match ($page->page_type) {
+                'index' => $page->controls->contains('control_type', 'table'),
+                'create', 'edit', 'show' => $page->controls->contains(fn ($control): bool => $control->model_field_id !== null),
+                default => $page->controls->isNotEmpty(),
+            };
+            $pageIsValid = $page->controls->isNotEmpty() && $validBindings && $hasModel && $hasPurposeControl;
+            $message = match (true) {
+                ! $hasModel => ucfirst($page->page_type).' pages require a model.',
+                ! $validBindings => 'Every bound control must use a field from the page model.',
+                $page->controls->isEmpty() => 'The page has no controls.',
+                ! $hasPurposeControl && $page->page_type === 'index' => 'Index pages require a table control.',
+                ! $hasPurposeControl => ucfirst($page->page_type).' pages require at least one model-bound control.',
+                default => $page->controls->count().' control(s) valid.',
+            };
             $checks[] = $this->check(
-                $page->controls->isNotEmpty() && $validBindings,
+                $pageIsValid,
                 "Page: {$page->name}",
-                ! $validBindings ? 'A control is bound to a field from a different model.' : ($page->controls->isNotEmpty() ? $page->controls->count().' control(s) valid.' : 'The page has no controls.')
+                $message
             );
         }
 
