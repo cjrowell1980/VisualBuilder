@@ -432,6 +432,20 @@ class VisualBuilderTest extends TestCase
         $this->assertDatabaseCount('build_runs', 3);
     }
 
+    public function test_api_only_project_validates_without_visual_pages(): void
+    {
+        $user = User::factory()->create();
+        $project = $user->builderProjects()->create(['name' => 'Service API', 'slug' => 'service-api', 'template' => 'api']);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+        $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+
+        $run = app(IterationValidator::class)->run($iteration);
+
+        $this->assertSame('passed', $run->status);
+        $this->assertSame('validated', $iteration->fresh()->status);
+    }
+
     public function test_assembler_creates_and_verifies_a_runnable_project_without_overwriting(): void
     {
         Storage::fake('local');

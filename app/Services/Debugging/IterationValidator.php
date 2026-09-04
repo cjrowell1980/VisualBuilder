@@ -45,11 +45,12 @@ class IterationValidator
             );
         }
 
-        $checks[] = $this->check(
-            $iteration->pages->isNotEmpty(),
-            'Pages',
-            $iteration->pages->isNotEmpty() ? $iteration->pages->count().' page(s) defined.' : 'Add at least one page.'
-        );
+        $pagesRequired = $iteration->project->template !== 'api';
+        $pagesValid = ! $pagesRequired || $iteration->pages->isNotEmpty();
+        $pageMessage = $iteration->pages->isNotEmpty()
+            ? $iteration->pages->count().' page(s) defined.'
+            : ($pagesRequired ? 'Add at least one page.' : 'Pages are optional for an API-only project.');
+        $checks[] = $this->check($pagesValid, 'Pages', $pageMessage);
 
         foreach ($iteration->pages as $page) {
             $validBindings = $page->controls->every(function ($control) use ($page): bool {
