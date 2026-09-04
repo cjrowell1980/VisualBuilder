@@ -5,6 +5,7 @@ namespace App\Services\Generation;
 use App\Models\BuildIteration;
 use App\Models\ControlDefinition;
 use App\Models\ModelDefinition;
+use App\Models\ModelRelationship;
 use App\Models\PageDefinition;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -74,6 +75,17 @@ class LaravelArtifactGenerator
         $fillable = $model->fields->pluck('name')->map(fn (string $name) => "'{$name}'")->implode(', ');
         $softDeletesImport = $model->soft_deletes ? "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n" : '';
         $softDeletesUse = $model->soft_deletes ? "\n    use SoftDeletes;\n" : '';
+        $relationTypes = $model->relationships->pluck('type')->unique()->map(fn (string $type): string => match ($type) {
+            'belongsTo' => 'BelongsTo',
+            'hasOne' => 'HasOne',
+            'hasMany' => 'HasMany',
+            'belongsToMany' => 'BelongsToMany',
+            default => throw new \RuntimeException("Unsupported relationship type: {$type}"),
+        });
+        $relationImports = $relationTypes->map(fn (string $type): string => "use Illuminate\\Database\\Eloquent\\Relations\\{$type};")->implode("\n");
+        $relationImports = $relationImports === '' ? '' : $relationImports."\n";
+        $relations = $model->relationships->map(fn (ModelRelationship $relationship): string => $this->relationship($relationship))->implode("\n\n");
+        $relations = $relations === '' ? '' : "\n\n{$relations}";
 
         return <<<PHP
 <?php
@@ -81,11 +93,34 @@ class LaravelArtifactGenerator
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-{$softDeletesImport}
+{$relationImports}{$softDeletesImport}
 class {$model->name} extends Model
 {{$softDeletesUse}
     protected \$fillable = [{$fillable}];
+{$relations}
 }
+PHP;
+    }
+
+    private function relationship(ModelRelationship $relationship): string
+    {
+        $returnType = match ($relationship->type) {
+            'belongsTo' => 'BelongsTo',
+            'hasOne' => 'HasOne',
+            'hasMany' => 'HasMany',
+            'belongsToMany' => 'BelongsToMany',
+            default => throw new \RuntimeException("Unsupported relationship type: {$relationship->type}"),
+        };
+        $arguments = "{$relationship->target->name}::class";
+        if ($relationship->type === 'belongsTo' && $relationship->foreign_key) {
+            $arguments .= ", '{$relationship->foreign_key}'";
+        }
+
+        return <<<PHP
+    public function {$relationship->name}(): {$returnType}
+    {
+        return \$this->{$relationship->type}({$arguments});
+    }
 PHP;
     }
 
@@ -99,9 +134,15 @@ PHP;
             };
             $chain = $field->nullable ? '->nullable()' : '';
             $chain .= $field->indexed ? '->index()' : '';
+            $chain .= $field->unique ? '->unique()' : '';
 
             return "            \$table->{$method}('{$field->name}'){$chain};";
         })->implode("\n");
+        $foreignKeys = $model->relationships
+            ->where('type', 'belongsTo')
+            ->map(fn (ModelRelationship $relationship): string => "            \$table->foreignId('{$relationship->foreign_key}')->constrained('{$relationship->target->table_name}');")
+            ->implode("\n");
+        $foreignKeys = $foreignKeys === '' ? '' : $foreignKeys."\n";
         $timestamps = $model->timestamps ? "\n            \$table->timestamps();" : '';
         $softDeletes = $model->soft_deletes ? "\n            \$table->softDeletes();" : '';
         $table = $model->table_name;
@@ -119,7 +160,7 @@ return new class extends Migration
     {
         Schema::create('{$table}', function (Blueprint \$table) {
             \$table->id();
-{$columns}{$timestamps}{$softDeletes}
+{$foreignKeys}{$columns}{$timestamps}{$softDeletes}
         });
     }
 
@@ -133,25 +174,56 @@ PHP;
 
     private function page(PageDefinition $page): string
     {
-        $controls = $page->controls->map(fn (ControlDefinition $control) => $this->control($control))->implode("\n\n");
+        $model = $page->modelDefinition;
+        $boundFields = $page->controls->pluck('field')->filter()->unique('id')->values();
+        $properties = $boundFields->map(fn ($field): string => "    public mixed \${$field->name} = null;")->implode("\n");
+        $properties = $properties === '' ? '' : "\n{$properties}\n";
+        $save = '';
+        $modelImport = '';
+        if ($model && $boundFields->isNotEmpty()) {
+            $modelImport = "use App\\Models\\{$model->name};\n";
+            $rules = $boundFields->mapWithKeys(function ($field): array {
+                $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
+
+                return [$field->name => $rules];
+            })->all();
+            $rulesCode = var_export($rules, true);
+            $fieldNames = $boundFields->pluck('name')->map(fn (string $name): string => "'{$name}'")->implode(', ');
+            $save = <<<PHP
+
+    public function save(): void
+    {
+        \$validated = \$this->validate({$rulesCode});
+        {$model->name}::query()->create(\$validated);
+        \$this->reset({$fieldNames});
+        session()->flash('status', '{$model->name} saved.');
+    }
+PHP;
+        }
+        $controls = $page->controls->map(fn (ControlDefinition $control) => $this->control($control, $save !== ''))->implode("\n\n");
         $title = e($page->name);
 
         return <<<BLADE
 <?php
 
-use Livewire\Component;
+{$modelImport}use Livewire\Component;
 
-new class extends Component {};
+new class extends Component
+{{$properties}{$save}
+};
 ?>
 
 <div class="mx-auto w-full max-w-7xl space-y-6 p-6 lg:p-10">
     <flux:heading size="xl">{$title}</flux:heading>
+    @if (session('status'))
+        <flux:callout variant="success" heading="Saved">{{ session('status') }}</flux:callout>
+    @endif
 {$controls}
 </div>
 BLADE;
     }
 
-    private function control(ControlDefinition $control): string
+    private function control(ControlDefinition $control, bool $hasSave): string
     {
         $label = e($control->label ?: Str::headline($control->control_type));
         $field = $control->model_field_id === null
@@ -164,7 +236,9 @@ BLADE;
             'textarea' => "    <flux:textarea wire:model=\"{$field}\" label=\"{$label}\" />",
             'select' => "    <flux:select wire:model=\"{$field}\" label=\"{$label}\"></flux:select>",
             'checkbox' => "    <flux:checkbox wire:model=\"{$field}\" label=\"{$label}\" />",
-            'button' => "    <flux:button variant=\"primary\">{$label}</flux:button>",
+            'button' => $hasSave
+                ? "    <flux:button wire:click=\"save\" variant=\"primary\">{$label}</flux:button>"
+                : "    <flux:button variant=\"primary\">{$label}</flux:button>",
             'table' => "    <div class=\"overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700\"><div class=\"p-4\">{$label}</div></div>",
             default => "    <flux:input wire:model=\"{$field}\" label=\"{$label}\" />",
         };
@@ -183,7 +257,9 @@ BLADE;
 
 use Illuminate\Support\Facades\Route;
 
+Route::middleware(['auth'])->group(function (): void {
 {$routes}
+});
 PHP;
     }
 

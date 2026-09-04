@@ -68,7 +68,13 @@ class VisualBuilderTest extends TestCase
         $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'docker_enabled' => true]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
         $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
-        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true]);
+        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true]);
+        $model->relationships()->create([
+            'target_model_id' => $model->id,
+            'name' => 'parent',
+            'type' => 'belongsTo',
+            'foreign_key' => 'parent_id',
+        ]);
         $page = $iteration->pages()->create([
             'model_definition_id' => $model->id,
             'name' => 'Customers',
@@ -92,6 +98,14 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/Dockerfile');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/compose.yaml');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/publish-image.yml');
+        $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
+        $migrationPath = Storage::disk('local')->files('generated/crm/iteration-1/database/migrations')[0];
+        $migrationSource = Storage::disk('local')->get($migrationPath);
+        $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
+        $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
+        $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
+        $this->assertStringContainsString("string('email')->index()->unique()", $migrationSource);
+        $this->assertStringContainsString('Customer::query()->create($validated)', $pageSource);
         $this->assertSame('generated', $iteration->fresh()->status);
 
         app(IterationValidator::class)->run($iteration);
