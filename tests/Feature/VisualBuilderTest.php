@@ -69,7 +69,9 @@ class VisualBuilderTest extends TestCase
         $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'template' => 'application-api', 'docker_enabled' => true]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
         $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
-        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true, 'default_value' => 'unknown@example.com']);
+        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true, 'default_value' => 'unknown@example.com', 'position' => 0]);
+        $model->fields()->create(['name' => 'active', 'label' => 'Active', 'type' => 'boolean', 'default_value' => 'true', 'position' => 1]);
+        $model->fields()->create(['name' => 'metadata', 'label' => 'Metadata', 'type' => 'json', 'nullable' => true, 'position' => 2]);
         $model->relationships()->create([
             'target_model_id' => $model->id,
             'name' => 'parent',
@@ -168,6 +170,8 @@ class VisualBuilderTest extends TestCase
         $this->assertLessThan(array_search($profileMigrationPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
+        $this->assertStringContainsString("'active' => 'boolean'", $modelSource);
+        $this->assertStringContainsString("'metadata' => 'array'", $modelSource);
         $this->assertStringContainsString('use SoftDeletes;', $roleModelSource);
         $this->assertStringContainsString('public $timestamps = false;', $roleModelSource);
         $this->assertStringContainsString('$table->softDeletes();', $roleMigrationSource);
@@ -201,7 +205,7 @@ class VisualBuilderTest extends TestCase
         $apiControllerSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
         $this->assertStringContainsString("Rule::unique('customers', 'email')", $apiControllerSource);
         $this->assertStringContainsString("Rule::unique('customers', 'email')->ignore(\$customer)", $apiControllerSource);
-        $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email'])", $schemaTestSource);
+        $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email', 'active', 'metadata'])", $schemaTestSource);
         $this->assertStringContainsString("Schema::hasColumns('roles', ['id', 'name'])", $schemaTestSource);
         $this->assertStringContainsString("Route::has('customers.create')", $routesTestSource);
         $this->assertStringContainsString("Route::has('api.customers.index')", $routesTestSource);

@@ -138,6 +138,29 @@ class LaravelArtifactGenerator
         $relationImports = $relationImports === '' ? '' : $relationImports."\n";
         $relations = $model->relationships->map(fn (ModelRelationship $relationship): string => $this->relationship($relationship))->implode("\n\n");
         $relations = $relations === '' ? '' : "\n\n{$relations}";
+        $casts = $model->fields->mapWithKeys(fn (ModelField $field): array => match ($field->type) {
+            'integer' => [$field->name => 'integer'],
+            'boolean' => [$field->name => 'boolean'],
+            'date' => [$field->name => 'date'],
+            'datetime' => [$field->name => 'datetime'],
+            'decimal' => [$field->name => 'decimal:2'],
+            'json' => [$field->name => 'array'],
+            default => [],
+        });
+        $castsMethod = '';
+        if ($casts->isNotEmpty()) {
+            $castLines = $casts->map(fn (string $cast, string $field): string => "            '{$field}' => '{$cast}',")->implode("\n");
+            $castsMethod = <<<PHP
+
+
+    protected function casts(): array
+    {
+        return [
+{$castLines}
+        ];
+    }
+PHP;
+        }
 
         return <<<PHP
 <?php
@@ -149,7 +172,7 @@ use Illuminate\Database\Eloquent\Model;
 class {$model->name} extends Model
 {{$softDeletesUse}
     protected \$fillable = [{$fillable}];
-{$timestampsProperty}{$relations}
+{$timestampsProperty}{$castsMethod}{$relations}
 }
 PHP;
     }
