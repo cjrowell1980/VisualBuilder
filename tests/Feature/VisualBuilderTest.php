@@ -206,6 +206,42 @@ class VisualBuilderTest extends TestCase
         }
     }
 
+    public function test_editor_reorders_and_deletes_schema_and_page_items(): void
+    {
+        $user = User::factory()->create();
+        $project = $user->builderProjects()->create(['name' => 'Editor', 'slug' => 'editor']);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build', 'status' => 'generated']);
+        $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $firstField = $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string', 'position' => 0]);
+        $secondField = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'position' => 1]);
+        $firstPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Customers', 'slug' => 'customers', 'position' => 0]);
+        $secondPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Create customer', 'slug' => 'customers/create', 'position' => 1]);
+        $firstControl = $firstPage->controls()->create(['model_field_id' => $firstField->id, 'control_type' => 'input', 'label' => 'Name', 'position' => 0]);
+        $secondControl = $firstPage->controls()->create(['model_field_id' => $secondField->id, 'control_type' => 'input', 'label' => 'Email', 'position' => 1]);
+
+        $component = Livewire::actingAs($user)->test('pages::projects.show', ['project' => $project])
+            ->set('selectedModelId', $model->id)
+            ->set('selectedPageId', $firstPage->id);
+        $component->call('moveField', $secondField->id, 'up');
+        $component->call('moveControl', $secondControl->id, 'up');
+        $component->call('movePage', $secondPage->id, 'up');
+
+        $this->assertSame(0, $secondField->fresh()->position);
+        $this->assertSame(0, $secondControl->fresh()->position);
+        $this->assertSame(0, $secondPage->fresh()->position);
+        $this->assertSame('draft', $iteration->fresh()->status);
+
+        $component->call('deleteControl', $firstControl->id);
+        $component->call('deleteField', $firstField->id);
+        $component->call('deletePage', $secondPage->id);
+        $this->assertModelMissing($firstControl);
+        $this->assertModelMissing($firstField);
+        $this->assertModelMissing($secondPage);
+
+        $component->call('deleteModel', $model->id);
+        $this->assertModelMissing($model);
+    }
+
     public function test_new_iteration_clones_the_complete_editable_graph(): void
     {
         $user = User::factory()->create();

@@ -10,6 +10,8 @@ use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use App\Services\Packaging\IterationPackager;
 use App\Services\Publishing\GitHubPublisher;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
@@ -333,6 +335,55 @@ new class extends Component
         $this->selectedPageId = $pageId;
     }
 
+    public function deleteModel(int $modelId): void
+    {
+        $this->iteration()->models()->findOrFail($modelId)->delete();
+        $this->selectedModelId = null;
+        $this->touchDesign();
+    }
+
+    public function deleteField(int $fieldId): void
+    {
+        $model = $this->iteration()->models()->findOrFail($this->selectedModelId);
+        $model->fields()->findOrFail($fieldId)->delete();
+        $this->touchDesign();
+    }
+
+    public function moveField(int $fieldId, string $direction): void
+    {
+        $model = $this->iteration()->models()->findOrFail($this->selectedModelId);
+        $field = $model->fields()->findOrFail($fieldId);
+        $this->swapPosition($field, $model->fields(), $direction);
+    }
+
+    public function deletePage(int $pageId): void
+    {
+        $this->iteration()->pages()->findOrFail($pageId)->delete();
+        $this->selectedPageId = null;
+        $this->touchDesign();
+    }
+
+    public function movePage(int $pageId, string $direction): void
+    {
+        $iteration = $this->iteration();
+        $page = $iteration->pages()->findOrFail($pageId);
+        $this->swapPosition($page, $iteration->pages(), $direction);
+    }
+
+    public function deleteControl(int $controlId): void
+    {
+        $page = $this->iteration()->pages()->findOrFail($this->selectedPageId);
+        $page->controls()->findOrFail($controlId)->delete();
+        $this->touchDesign();
+    }
+
+    public function moveControl(int $controlId, string $direction): void
+    {
+        $page = $this->iteration()->pages()->findOrFail($this->selectedPageId);
+        $control = $page->controls()->findOrFail($controlId);
+        $this->swapPosition($control, $page->controls(), $direction);
+    }
+
     public function with(): array
     {
         $iteration = $this->iteration()->load('models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins', 'runs', 'packages');
@@ -356,6 +407,20 @@ new class extends Component
     private function touchDesign(): void
     {
         $this->iteration()->update(['status' => 'draft', 'generated_at' => null]);
+    }
+
+    private function swapPosition(Model $item, HasMany $relation, string $direction): void
+    {
+        abort_unless(in_array($direction, ['up', 'down'], true), 404);
+        $operator = $direction === 'up' ? '<' : '>';
+        $order = $direction === 'up' ? 'desc' : 'asc';
+        $adjacent = $relation->where('position', $operator, $item->getAttribute('position'))->orderBy('position', $order)->first();
+        if ($adjacent) {
+            $position = $item->getAttribute('position');
+            $item->update(['position' => $adjacent->getAttribute('position')]);
+            $adjacent->update(['position' => $position]);
+            $this->touchDesign();
+        }
     }
 };
 ?>
@@ -392,8 +457,8 @@ new class extends Component
             <main class="p-6">
                 @php($selected = $iteration->models->firstWhere('id', $selectedModelId))
                 @if ($selected)
-                    <div class="flex justify-between"><div><flux:heading>{{ $selected->name }}</flux:heading><flux:text>{{ $selected->table_name }}</flux:text></div><flux:badge>{{ $selected->fields->count() }} fields</flux:badge></div>
-                    <div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">@forelse ($selected->fields as $field)<div class="grid grid-cols-[1fr_7rem_8rem] gap-3 border-b border-zinc-100 px-4 py-3 text-sm last:border-0 dark:border-zinc-800"><div><div>{{ $field->label }}</div><code class="text-xs">{{ $field->name }}</code></div><span>{{ $field->type }}</span><span class="text-xs text-zinc-500">{{ $field->nullable ? 'nullable' : 'required' }}{{ $field->unique ? ' · unique' : '' }}</span></div>@empty<div class="p-10 text-center text-sm text-zinc-500">Add the first field using the inspector.</div>@endforelse</div>
+                    <div class="flex justify-between"><div><flux:heading>{{ $selected->name }}</flux:heading><flux:text>{{ $selected->table_name }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selected->fields->count() }} fields</flux:badge><flux:button wire:click="deleteModel({{ $selected->id }})" wire:confirm="Delete this model and its fields and relationships?" size="sm" variant="danger" icon="trash" /></div></div>
+                    <div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">@forelse ($selected->fields as $field)<div class="grid grid-cols-[1fr_7rem_8rem_auto] items-center gap-3 border-b border-zinc-100 px-4 py-3 text-sm last:border-0 dark:border-zinc-800"><div><div>{{ $field->label }}</div><code class="text-xs">{{ $field->name }}</code></div><span>{{ $field->type }}</span><span class="text-xs text-zinc-500">{{ $field->nullable ? 'nullable' : 'required' }}{{ $field->unique ? ' · unique' : '' }}</span><div class="flex gap-1"><flux:button wire:click="moveField({{ $field->id }}, 'up')" size="xs" variant="ghost" icon="arrow-up" /><flux:button wire:click="moveField({{ $field->id }}, 'down')" size="xs" variant="ghost" icon="arrow-down" /><flux:button wire:click="deleteField({{ $field->id }})" wire:confirm="Delete this field?" size="xs" variant="danger" icon="trash" /></div></div>@empty<div class="p-10 text-center text-sm text-zinc-500">Add the first field using the inspector.</div>@endforelse</div>
                     <div class="mt-7"><flux:heading size="sm">Relationships</flux:heading><div class="mt-3 space-y-2">@forelse($selected->relationships as $relationship)<div class="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800"><code>{{ $relationship->name }}()</code><span>{{ $relationship->type }} {{ $relationship->target->name }}</span></div>@empty<flux:text>No relationships defined.</flux:text>@endforelse</div></div>
                 @else<div class="grid h-full place-items-center"><flux:heading>Start with a model</flux:heading></div>@endif
             </main>
@@ -408,7 +473,7 @@ new class extends Component
     @elseif ($mode === 'pages')
         <div class="grid min-h-[40rem] overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 lg:grid-cols-[18rem_1fr_21rem]">
             <aside class="border-r border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Pages</flux:heading><div class="mt-4 space-y-1">@foreach($iteration->pages as $page)<button type="button" wire:click="selectPage({{ $page->id }})" class="flex w-full justify-between rounded-lg px-3 py-2 text-left text-sm {{ $selectedPageId === $page->id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"><span>{{ $page->name }}</span><span>{{ $page->controls->count() }}</span></button>@endforeach</div><form wire:submit="addPage" class="mt-5 space-y-3"><flux:input wire:model="pageName" label="Page name" placeholder="Customers" /><flux:input wire:model="pageSlug" label="URL" placeholder="customers" /><flux:select wire:model="pageType" label="Type">@foreach(['custom','dashboard','index','create','edit','show'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:select wire:model="pageModelId" label="Model (optional)"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)<flux:select.option value="{{ $model->id }}">{{ $model->name }}</flux:select.option>@endforeach</flux:select><flux:button type="submit" class="w-full">Add page</flux:button></form></aside>
-            <main class="bg-zinc-50 p-6 dark:bg-zinc-950">@php($selectedPage = $iteration->pages->firstWhere('id', $selectedPageId))@if($selectedPage)<div class="min-h-full rounded-xl border border-zinc-200 bg-white p-7 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"><div class="mb-6 flex justify-between"><div><flux:heading size="xl">{{ $selectedPage->name }}</flux:heading><flux:text>/{{ $selectedPage->slug }} · {{ $selectedPage->page_type }}</flux:text></div><flux:badge>{{ $selectedPage->modelDefinition?->name ?? 'No model' }}</flux:badge></div><div class="space-y-4">@forelse($selectedPage->controls as $control)<div class="rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700"><div class="flex justify-between"><span>{{ $control->label }}</span><code class="text-xs">{{ $control->control_type }}</code></div>@if($control->field)<flux:text class="mt-1">Bound to {{ $control->field->name }}</flux:text>@endif</div>@empty<div class="grid min-h-64 place-items-center text-center"><div><flux:heading>Empty canvas</flux:heading><flux:text>Add controls from the inspector.</flux:text></div></div>@endforelse</div></div>@else<div class="grid h-full place-items-center"><flux:heading>Create or select a page</flux:heading></div>@endif</main>
+            <main class="bg-zinc-50 p-6 dark:bg-zinc-950">@php($selectedPage = $iteration->pages->firstWhere('id', $selectedPageId))@if($selectedPage)<div class="min-h-full rounded-xl border border-zinc-200 bg-white p-7 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"><div class="mb-6 flex justify-between"><div><flux:heading size="xl">{{ $selectedPage->name }}</flux:heading><flux:text>/{{ $selectedPage->slug }} · {{ $selectedPage->page_type }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selectedPage->modelDefinition?->name ?? 'No model' }}</flux:badge><flux:button wire:click="movePage({{ $selectedPage->id }}, 'up')" size="sm" variant="ghost" icon="arrow-up" /><flux:button wire:click="movePage({{ $selectedPage->id }}, 'down')" size="sm" variant="ghost" icon="arrow-down" /><flux:button wire:click="deletePage({{ $selectedPage->id }})" wire:confirm="Delete this page and all its controls?" size="sm" variant="danger" icon="trash" /></div></div><div class="space-y-4">@forelse($selectedPage->controls as $control)<div class="rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700"><div class="flex justify-between gap-3"><div><span>{{ $control->label }}</span>@if($control->field)<flux:text class="mt-1">Bound to {{ $control->field->name }}</flux:text>@endif</div><div class="flex items-center gap-1"><code class="mr-2 text-xs">{{ $control->control_type }}</code><flux:button wire:click="moveControl({{ $control->id }}, 'up')" size="xs" variant="ghost" icon="arrow-up" /><flux:button wire:click="moveControl({{ $control->id }}, 'down')" size="xs" variant="ghost" icon="arrow-down" /><flux:button wire:click="deleteControl({{ $control->id }})" wire:confirm="Delete this control?" size="xs" variant="danger" icon="trash" /></div></div></div>@empty<div class="grid min-h-64 place-items-center text-center"><div><flux:heading>Empty canvas</flux:heading><flux:text>Add controls from the inspector.</flux:text></div></div>@endforelse</div></div>@else<div class="grid h-full place-items-center"><flux:heading>Create or select a page</flux:heading></div>@endif</main>
             <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700"><flux:heading size="sm">Control inspector</flux:heading><form wire:submit="addControl" class="mt-4 space-y-3"><flux:select wire:model="controlType" label="Control">@foreach(['heading','text','input','textarea','select','checkbox','button','table'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="controlLabel" label="Label" placeholder="Customer name" /><flux:select wire:model="controlFieldId" label="Bound field"><flux:select.option value="">None</flux:select.option>@foreach($iteration->models as $model)@foreach($model->fields as $field)<flux:select.option value="{{ $field->id }}">{{ $model->name }} · {{ $field->name }}</flux:select.option>@endforeach @endforeach</flux:select><flux:button type="submit" class="w-full" :disabled="!$selectedPageId">Add to canvas</flux:button></form></aside>
         </div>
     @elseif ($mode === 'preview')
