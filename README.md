@@ -1,31 +1,58 @@
-# Laravel + Livewire Starter Kit
+# Visual Builder
 
-## Introduction
+Visual Builder turns a versioned application schema into reviewable Laravel code. The first vertical slice supports authenticated projects, build iterations, models, typed fields, and deterministic model/migration generation.
 
-Our Laravel + [Livewire](https://livewire.laravel.com) starter kit provides a robust, modern starting point for building Laravel applications with a Livewire frontend.
+## Stack
 
-Livewire is a powerful way of building dynamic, reactive, frontend UIs using just PHP. It's a great fit for teams that primarily use Blade templates and are looking for a simpler alternative to JavaScript-driven SPA frameworks like React and Vue.
+- Laravel 13, PHP 8.4, Fortify
+- Livewire 4 single-file components (the modern successor to Volt's class-based SFC format)
+- Flux UI with a documented Flux Pro upgrade path
+- Blade, Alpine, Tailwind CSS 4
+- PostgreSQL 17 and Docker
+- PHPUnit, Larastan, Pint, GitHub Actions, GHCR publishing
 
-This Livewire starter kit utilizes Livewire 4, TypeScript, Tailwind, and the [Flux UI](https://fluxui.dev) component library.
+## Local setup
 
-If you are looking for the alternate configurations of this starter kit, they can be found in the following branches:
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+npm install
+npm run build
+composer dev
+```
 
-- [workos](https://github.com/laravel/livewire-starter-kit/tree/workos) - if WorkOS is selected for authentication
+For a quick SQLite setup, set `DB_CONNECTION=sqlite`, clear the other database settings, create `database/database.sqlite`, then migrate.
 
-## Official Documentation
+## Docker
 
-Documentation for all Laravel starter kits can be found on the [Laravel website](https://laravel.com/docs/starter-kits).
+Set `APP_KEY` in your environment, then run:
 
-## Contributing
+```bash
+docker compose up --build -d
+docker compose exec app php artisan migrate --force
+```
 
-Thank you for considering contributing to our starter kit! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+The application is available at `http://localhost:8080`. PostgreSQL data is stored in the named `postgres-data` volume.
 
-All contributions to the Starter Kits from now on should be made through [Maestro](https://github.com/laravel/maestro).
+## Flux Pro
 
-## Code of Conduct
+Flux Pro is a private Composer package and is intentionally not installed without a licence. Authenticate locally with the credentials from your Flux account, ensure `auth.json` remains ignored, then install it:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+composer config http-basic.composer.fluxui.dev YOUR_EMAIL YOUR_LICENSE_KEY
+composer require livewire/flux-pro
+```
 
-## License
+CI/deployment should create Composer authentication from repository secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY`; never commit either value.
 
-The Laravel + Livewire starter kit is open-sourced software licensed under the MIT license.
+## Delivery model
+
+1. A project owns ordered, immutable-in-intent build iterations.
+2. Each iteration describes models, fields, plugins, UI, authorization, and deployment configuration.
+3. Generation writes to `storage/app/private/generated/{project}/iteration-{n}` for review.
+4. Plugin requirements are recorded separately and require approval before installation.
+5. GitHub Actions verifies the application; version tags publish an immutable GHCR image.
+
+GitHub repository creation and production deployment are deliberately separate from code generation because they require an explicit owner, repository visibility, target host, and secrets.

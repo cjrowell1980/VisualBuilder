@@ -1,0 +1,41 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+/**
+ * @property BuilderProject $project
+ * @property Collection<int, ModelDefinition> $models
+ * @property Collection<int, PluginRequirement> $plugins
+ */
+class BuildIteration extends Model
+{
+    protected $fillable = ['builder_project_id', 'number', 'name', 'status', 'configuration', 'generated_at'];
+
+    protected function casts(): array
+    {
+        return ['configuration' => 'array', 'generated_at' => 'datetime'];
+    }
+
+    /** @return BelongsTo<BuilderProject, $this> */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(BuilderProject::class, 'builder_project_id');
+    }
+
+    /** @return HasMany<ModelDefinition, $this> */
+    public function models(): HasMany
+    {
+        return $this->hasMany(ModelDefinition::class);
+    }
+
+    /** @return HasMany<PluginRequirement, $this> */
+    public function plugins(): HasMany
+    {
+        return $this->hasMany(PluginRequirement::class);
+    }
+}
