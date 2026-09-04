@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\Debugging\IterationValidator;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
+use App\Services\Packaging\IterationPackager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -82,6 +83,12 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/routes/generated.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/visual-builder.json');
         $this->assertSame('generated', $iteration->fresh()->status);
+
+        app(IterationValidator::class)->run($iteration);
+        $package = app(IterationPackager::class)->zip($iteration->fresh());
+        $this->assertSame('zip', $package->format);
+        $this->assertSame(64, strlen($package->checksum));
+        $this->assertFileExists($package->path);
     }
 
     public function test_editor_creates_fields_relationships_pages_and_controls_within_the_project(): void

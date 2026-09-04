@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property Collection<int, PluginRequirement> $plugins
  * @property Collection<int, PageDefinition> $pages
  * @property Collection<int, BuildRun> $runs
+ * @property Collection<int, BuildPackage> $packages
  */
 class BuildIteration extends Model
 {
@@ -51,5 +52,11 @@ class BuildIteration extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(BuildRun::class)->latest();
+    }
+
+    /** @return HasMany<BuildPackage, $this> */
+    public function packages(): HasMany
+    {
+        return $this->hasMany(BuildPackage::class)->latest();
     }
 }

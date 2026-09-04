@@ -6,6 +6,7 @@ use App\Models\ModelField;
 use App\Services\Debugging\IterationValidator;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
+use App\Services\Packaging\IterationPackager;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
@@ -38,6 +39,7 @@ new class extends Component {
     public ?int $controlFieldId = null;
     public ?string $generatedPath = null;
     public string $iterationName = '';
+    public ?string $packagePath = null;
 
     public function mount(BuilderProject $project): void
     {
@@ -171,6 +173,12 @@ new class extends Component {
         $validator->run($this->iteration());
     }
 
+    public function packageIteration(IterationPackager $packager): void
+    {
+        $package = $packager->zip($this->iteration());
+        $this->packagePath = $package->path;
+    }
+
     public function createIteration(IterationCloner $cloner): void
     {
         $data = $this->validate(['iterationName' => ['required', 'string', 'max:100']]);
@@ -192,7 +200,7 @@ new class extends Component {
 
     public function with(): array
     {
-        $iteration = $this->iteration()->load('models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins', 'runs');
+        $iteration = $this->iteration()->load('models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins', 'runs', 'packages');
         $this->selectedModelId ??= $iteration->models->first()?->id;
         $this->selectedPageId ??= $iteration->pages->first()?->id;
 
@@ -258,6 +266,6 @@ new class extends Component {
     @elseif ($mode === 'preview')
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]"><div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><div class="flex items-start justify-between gap-4"><div><flux:heading size="lg">Debug readiness</flux:heading><flux:text class="mt-2">{{ $iteration->models->count() }} models, {{ $iteration->pages->count() }} pages and {{ $iteration->pages->sum(fn($page) => $page->controls->count()) }} controls.</flux:text></div><flux:button wire:click="runValidation" variant="primary" icon="play">Run validation</flux:button></div>@if($latestRun)<div class="mt-7 space-y-3">@foreach($latestRun->checks ?? [] as $check)<flux:callout :variant="$check['level'] === 'success' ? 'success' : 'danger'" :icon="$check['level'] === 'success' ? 'check-circle' : 'x-circle'" :heading="$check['label']"><flux:callout.text>{{ $check['message'] }}</flux:callout.text></flux:callout>@endforeach</div>@else<div class="mt-8 rounded-lg border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700"><flux:text>No validation run yet.</flux:text></div>@endif</div><aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$latestRun?->status === 'passed' ? 'green' : ($latestRun?->status === 'failed' ? 'red' : 'zinc')">{{ $latestRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge>Pending</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$latestRun?->status !== 'passed'">Generate review bundle</flux:button></aside></div>
     @else
-        <div class="rounded-xl border border-zinc-200 bg-white p-10 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish iteration</flux:heading><flux:text class="mt-2">Generation produces a reviewable bundle first. Git, ZIP and Docker publishing unlock after validation and runtime tests pass.</flux:text><flux:button class="mt-6" variant="primary" disabled>Package release</flux:button></div>
+        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]"><div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Package iteration</flux:heading><flux:text class="mt-2">Create an immutable ZIP of the generated review bundle. Git and Docker release targets will use the same validated iteration.</flux:text>@if($packagePath)<flux:callout class="mt-6" variant="success" icon="archive-box" heading="ZIP package ready"><flux:callout.text>{{ $packagePath }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="packageIteration" class="mt-6" variant="primary" icon="archive-box" :disabled="$latestRun?->status !== 'passed' || $iteration->status !== 'generated'">Create ZIP package</flux:button></div><aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Packages</flux:heading><div class="mt-4 space-y-3">@forelse($iteration->packages as $package)<div class="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><div class="flex justify-between"><span>{{ strtoupper($package->format) }}</span><span>{{ number_format($package->bytes / 1024, 1) }} KB</span></div><code class="mt-2 block truncate text-xs">{{ $package->checksum }}</code></div>@empty<flux:text>No packages created.</flux:text>@endforelse</div></aside></div>
     @endif
 </div>
