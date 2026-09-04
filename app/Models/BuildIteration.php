@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property BuilderProject $project
  * @property Collection<int, ModelDefinition> $models
  * @property Collection<int, PluginRequirement> $plugins
+ * @property Collection<int, PageDefinition> $pages
  */
 class BuildIteration extends Model
 {
@@ -37,5 +38,11 @@ class BuildIteration extends Model
     public function plugins(): HasMany
     {
         return $this->hasMany(PluginRequirement::class);
+    }
+
+    /** @return HasMany<PageDefinition, $this> */
+    public function pages(): HasMany
+    {
+        return $this->hasMany(PageDefinition::class)->orderBy('position');
     }
 }

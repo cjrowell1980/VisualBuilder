@@ -34,4 +34,10 @@ class ModelDefinition extends Model
     {
         return $this->hasMany(ModelField::class)->orderBy('position');
     }
+
+    /** @return HasMany<ModelRelationship, $this> */
+    public function relationships(): HasMany
+    {
+        return $this->hasMany(ModelRelationship::class, 'source_model_id');
+    }
 }

@@ -13,11 +13,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ModelField extends Model
 {
-    protected $fillable = ['model_definition_id', 'name', 'type', 'nullable', 'indexed', 'default_value', 'position'];
+    protected $fillable = [
+        'model_definition_id', 'name', 'label', 'type', 'nullable', 'indexed',
+        'unique', 'default_value', 'validation_rules', 'position',
+    ];
 
     protected function casts(): array
     {
-        return ['nullable' => 'boolean', 'indexed' => 'boolean'];
+        return [
+            'nullable' => 'boolean',
+            'indexed' => 'boolean',
+            'unique' => 'boolean',
+            'validation_rules' => 'array',
+        ];
     }
 
     /** @return BelongsTo<ModelDefinition, $this> */
