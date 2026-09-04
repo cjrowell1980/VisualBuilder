@@ -10,7 +10,7 @@ class IterationValidator
     public function run(BuildIteration $iteration): BuildRun
     {
         $run = $iteration->runs()->create(['type' => 'validation', 'status' => 'running', 'started_at' => now()]);
-        $iteration->load('models.fields', 'models.relationships', 'pages.controls.field.modelDefinition', 'pages.modelDefinition');
+        $iteration->load('models.fields', 'models.relationships.target', 'pages.controls.field.modelDefinition', 'pages.modelDefinition');
 
         $checks = [];
         $checks[] = $this->check(
@@ -18,12 +18,23 @@ class IterationValidator
             'Data model',
             $iteration->models->isNotEmpty() ? $iteration->models->count().' model(s) defined.' : 'Add at least one model.'
         );
+        $checks[] = $this->check(
+            $iteration->models->pluck('table_name')->unique()->count() === $iteration->models->count(),
+            'Database tables',
+            'Every model must use a unique table name.'
+        );
 
         foreach ($iteration->models as $model) {
             $checks[] = $this->check(
                 $model->fields->isNotEmpty(),
                 "Model: {$model->name}",
                 $model->fields->isNotEmpty() ? $model->fields->count().' field(s) defined.' : 'The model has no fields.'
+            );
+            $validRelationships = $model->relationships->every(fn ($relationship): bool => $relationship->target->build_iteration_id === $iteration->id);
+            $checks[] = $this->check(
+                $validRelationships,
+                "Relationships: {$model->name}",
+                $validRelationships ? 'Relationship targets belong to this iteration.' : 'A relationship targets a model from another iteration.'
             );
         }
 

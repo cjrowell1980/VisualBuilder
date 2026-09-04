@@ -128,6 +128,10 @@ class VisualBuilderTest extends TestCase
         $component = Livewire::actingAs($user)
             ->test('pages::projects.show', ['project' => $project])
             ->set('selectedModelId', $contact->id)
+            ->call('editModel', $contact->id)
+            ->set('modelName', 'ContactRecord')
+            ->set('modelTableName', 'contact_records')
+            ->call('saveModel')
             ->set('fieldName', 'email')
             ->set('fieldLabel', 'Email address')
             ->set('fieldType', 'string')
@@ -135,9 +139,21 @@ class VisualBuilderTest extends TestCase
             ->set('fieldUnique', true)
             ->call('addField');
 
+        $this->assertSame('ContactRecord', $contact->fresh()->name);
+        $this->assertSame('contact_records', $contact->fresh()->table_name);
+
         $field = $contact->fields()->firstOrFail();
         $this->assertSame(['required', 'email', 'max:255'], $field->validation_rules);
         $this->assertTrue($field->unique);
+        $component
+            ->call('editField', $field->id)
+            ->set('fieldLabel', 'Primary email')
+            ->set('fieldRules', 'required|email')
+            ->set('fieldIndexed', true)
+            ->call('saveField');
+        $this->assertSame('Primary email', $field->fresh()->label);
+        $this->assertSame(['required', 'email'], $field->fresh()->validation_rules);
+        $this->assertTrue($field->fresh()->indexed);
 
         $component
             ->set('relationshipName', 'customer')
@@ -157,6 +173,19 @@ class VisualBuilderTest extends TestCase
             ->set('controlLabel', 'Email')
             ->set('controlFieldId', $field->id)
             ->call('addControl');
+        $control = $page->controls()->firstOrFail();
+        $component
+            ->call('editPage', $page->id)
+            ->set('pageName', 'Contact directory')
+            ->set('pageSlug', 'contact-directory')
+            ->call('savePage')
+            ->call('editControl', $control->id)
+            ->set('controlType', 'textarea')
+            ->set('controlLabel', 'Primary email field')
+            ->call('saveControl');
+        $this->assertSame('contact-directory', $page->fresh()->slug);
+        $this->assertSame('textarea', $control->fresh()->control_type);
+        $this->assertSame('Primary email field', $control->fresh()->label);
 
         $component
             ->set('pluginType', 'npm')
