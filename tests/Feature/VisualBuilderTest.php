@@ -83,6 +83,12 @@ class VisualBuilderTest extends TestCase
             'name' => 'roles',
             'type' => 'belongsToMany',
         ]);
+        $model->relationships()->create([
+            'target_model_id' => $role->id,
+            'name' => 'primaryRole',
+            'type' => 'belongsTo',
+            'foreign_key' => 'primary_role_id',
+        ]);
         $page = $iteration->pages()->create([
             'model_definition_id' => $model->id,
             'name' => 'Customers',
@@ -142,6 +148,7 @@ class VisualBuilderTest extends TestCase
         $this->assertNotNull($roleMigrationPath);
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
         $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
+        $this->assertLessThan(array_search($migrationPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
@@ -411,7 +418,13 @@ class VisualBuilderTest extends TestCase
         $passed = app(IterationValidator::class)->run($iteration);
         $this->assertSame('passed', $passed->status);
         $this->assertNotEmpty($passed->checks);
-        $this->assertDatabaseCount('build_runs', 2);
+        $other = $iteration->models()->create(['name' => 'Account', 'table_name' => 'accounts']);
+        $other->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+        $model->relationships()->create(['target_model_id' => $other->id, 'name' => 'account', 'type' => 'belongsTo', 'foreign_key' => 'account_id']);
+        $other->relationships()->create(['target_model_id' => $model->id, 'name' => 'customer', 'type' => 'belongsTo', 'foreign_key' => 'customer_id']);
+        $cycle = app(IterationValidator::class)->run($iteration);
+        $this->assertSame('failed', $cycle->status);
+        $this->assertDatabaseCount('build_runs', 3);
     }
 
     public function test_assembler_creates_and_verifies_a_runnable_project_without_overwriting(): void

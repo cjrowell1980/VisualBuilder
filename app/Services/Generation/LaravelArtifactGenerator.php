@@ -29,11 +29,13 @@ class LaravelArtifactGenerator
         $generatedPivots = [];
         foreach ($iteration->models as $model) {
             $files[] = $this->write($root, "app/Models/{$model->name}.php", $this->model($model));
-            $timestamp = $migrationTime->addSeconds($migrationSequence++)->format('Y_m_d_His');
-            $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$model->table_name.'_table.php', $this->migration($model));
             if ($iteration->project->template !== 'application') {
                 $files[] = $this->write($root, "app/Http/Controllers/Api/{$model->name}Controller.php", $this->apiController($model));
             }
+        }
+        foreach ($this->migrationOrder($iteration) as $model) {
+            $timestamp = $migrationTime->addSeconds($migrationSequence++)->format('Y_m_d_His');
+            $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$model->table_name.'_table.php', $this->migration($model));
         }
         foreach ($iteration->models as $model) {
             foreach ($model->relationships->where('type', 'belongsToMany') as $relationship) {
@@ -95,6 +97,28 @@ class LaravelArtifactGenerator
         Storage::disk('local')->put("{$root}/{$path}", $contents);
 
         return $path;
+    }
+
+    /** @return list<ModelDefinition> */
+    private function migrationOrder(BuildIteration $iteration): array
+    {
+        $remaining = $iteration->models->keyBy('id');
+        $ordered = [];
+        while ($remaining->isNotEmpty()) {
+            $next = $remaining->first(function (ModelDefinition $model) use ($remaining): bool {
+                return $model->relationships
+                    ->where('type', 'belongsTo')
+                    ->every(fn (ModelRelationship $relationship): bool => $relationship->target_model_id === $model->id
+                        || ! $remaining->has($relationship->target_model_id));
+            });
+            if (! $next) {
+                throw new \RuntimeException('Circular belongsTo relationships must be redesigned before migrations can be generated.');
+            }
+            $ordered[] = $next;
+            $remaining->forget($next->id);
+        }
+
+        return $ordered;
     }
 
     private function model(ModelDefinition $model): string

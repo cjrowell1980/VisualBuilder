@@ -4,6 +4,8 @@ namespace App\Services\Debugging;
 
 use App\Models\BuildIteration;
 use App\Models\BuildRun;
+use App\Models\ModelDefinition;
+use App\Models\ModelRelationship;
 
 class IterationValidator
 {
@@ -22,6 +24,11 @@ class IterationValidator
             $iteration->models->pluck('table_name')->unique()->count() === $iteration->models->count(),
             'Database tables',
             'Every model must use a unique table name.'
+        );
+        $checks[] = $this->check(
+            $this->belongsToGraphIsAcyclic($iteration),
+            'Migration dependencies',
+            'BelongsTo relationships must not contain a circular table dependency.'
         );
 
         foreach ($iteration->models as $model) {
@@ -74,5 +81,24 @@ class IterationValidator
     private function check(bool $passes, string $label, string $message): array
     {
         return ['level' => $passes ? 'success' : 'error', 'label' => $label, 'message' => $message];
+    }
+
+    private function belongsToGraphIsAcyclic(BuildIteration $iteration): bool
+    {
+        $remaining = $iteration->models->keyBy('id');
+        while ($remaining->isNotEmpty()) {
+            $next = $remaining->first(function (ModelDefinition $model) use ($remaining): bool {
+                return $model->relationships
+                    ->where('type', 'belongsTo')
+                    ->every(fn (ModelRelationship $relationship): bool => $relationship->target_model_id === $model->id
+                        || ! $remaining->has($relationship->target_model_id));
+            });
+            if (! $next) {
+                return false;
+            }
+            $remaining->forget($next->id);
+        }
+
+        return true;
     }
 }
