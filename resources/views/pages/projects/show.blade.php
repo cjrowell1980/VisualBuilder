@@ -9,6 +9,7 @@ use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use App\Services\Packaging\IterationPackager;
+use App\Services\Publishing\GitHubPublisher;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
@@ -71,10 +72,15 @@ new class extends Component
 
     public ?string $previewMessage = null;
 
+    public string $githubRepository = '';
+
+    public ?string $githubMessage = null;
+
     public function mount(BuilderProject $project): void
     {
         abort_unless($project->user_id === auth()->id(), 403);
         $this->project = $project;
+        $this->githubRepository = (string) $project->github_repository;
     }
 
     public function setMode(string $mode): void
@@ -232,6 +238,16 @@ new class extends Component
         $this->previewMessage = 'Debugger stopped.';
     }
 
+    public function publishToGitHub(GitHubPublisher $publisher): void
+    {
+        $data = $this->validate([
+            'githubRepository' => ['required', 'regex:/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/', 'max:200'],
+        ]);
+        $run = $publisher->publish($this->iteration(), $data['githubRepository']);
+        $this->githubMessage = $run->checks[0]['message'] ?? $run->output;
+        $this->project->refresh();
+    }
+
     public function createIteration(IterationCloner $cloner): void
     {
         $data = $this->validate(['iterationName' => ['required', 'string', 'max:100']]);
@@ -262,6 +278,7 @@ new class extends Component
             'validationRun' => $iteration->runs->firstWhere('type', 'validation'),
             'assemblyRun' => $iteration->runs->firstWhere('type', 'assembly'),
             'previewRun' => $iteration->runs->firstWhere('type', 'preview'),
+            'githubRun' => $iteration->runs->firstWhere('type', 'github'),
         ];
     }
 
@@ -336,6 +353,7 @@ new class extends Component
             <div class="space-y-6">
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Build runnable application</flux:heading><flux:text class="mt-2">Create a clean Laravel application at <code>{{ $project->output_path ?: 'an output folder selected in project setup' }}</code>, apply this iteration, install approved packages, build assets, migrate, and run its tests.</flux:text>@if($assemblyMessage)<flux:callout class="mt-6" :variant="$assemblyRun?->status === 'passed' ? 'success' : 'danger'" :icon="$assemblyRun?->status === 'passed' ? 'check-circle' : 'x-circle'" heading="Project assembly"><flux:callout.text>{{ $assemblyMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="assembleProject" wire:confirm="Create the application in the configured output folder? Existing folders are never overwritten." class="mt-6" variant="primary" icon="wrench-screwdriver" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated' || !$project->output_path">Build and test application</flux:button></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Package iteration</flux:heading><flux:text class="mt-2">Create an immutable ZIP of the generated review bundle. Git and Docker release targets use the same validated iteration.</flux:text>@if($packagePath)<flux:callout class="mt-6" variant="success" icon="archive-box" heading="ZIP package ready"><flux:callout.text>{{ $packagePath }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="packageIteration" class="mt-6" icon="archive-box" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated'">Create ZIP package</flux:button></div>
+                <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish to GitHub</flux:heading><flux:text class="mt-2">Commit the assembled application and push it using your authenticated GitHub CLI. New repositories are private by default.</flux:text><flux:input wire:model="githubRepository" class="mt-5" label="Repository" placeholder="owner/project-name" />@if($githubMessage)<flux:callout class="mt-5" :variant="$githubRun?->status === 'passed' ? 'success' : 'danger'" heading="GitHub delivery"><flux:callout.text>{{ $githubMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="publishToGitHub" wire:confirm="Commit and push this assembled application to GitHub?" class="mt-5" icon="cloud-arrow-up" :disabled="$assemblyRun?->status !== 'passed'">Commit and push</flux:button></div>
             </div>
             <aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Packages</flux:heading><div class="mt-4 space-y-3">@forelse($iteration->packages as $package)<div class="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><div class="flex justify-between"><span>{{ strtoupper($package->format) }}</span><span>{{ number_format($package->bytes / 1024, 1) }} KB</span></div><code class="mt-2 block truncate text-xs">{{ $package->checksum }}</code></div>@empty<flux:text>No packages created.</flux:text>@endforelse</div></aside>
         </div>

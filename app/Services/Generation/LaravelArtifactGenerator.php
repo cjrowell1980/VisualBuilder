@@ -35,7 +35,9 @@ class LaravelArtifactGenerator
             $files[] = $this->write($root, 'compose.yaml', $this->compose($iteration));
             $files[] = $this->write($root, 'docker/nginx.conf', $this->nginx());
             $files[] = $this->write($root, 'docker/supervisord.conf', $this->supervisor());
+            $files[] = $this->write($root, '.github/workflows/publish-image.yml', $this->publishImageWorkflow());
         }
+        $files[] = $this->write($root, '.github/workflows/tests.yml', $this->testWorkflow());
 
         $manifest = [
             'project' => $iteration->project->only(['name', 'slug', 'template', 'database_driver', 'docker_enabled']),
@@ -291,5 +293,64 @@ autorestart=true
 command=nginx -g "daemon off;"
 autorestart=true
 SUPERVISOR;
+    }
+
+    private function testWorkflow(): string
+    {
+        return <<<'YAML'
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist
+      - run: cp .env.example .env
+      - run: php artisan key:generate
+      - run: touch database/database.sqlite
+      - run: php artisan migrate --force
+      - run: npm ci
+      - run: npm run build
+      - run: php artisan test
+YAML;
+    }
+
+    private function publishImageWorkflow(): string
+    {
+        return <<<'YAML'
+name: publish container
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+YAML;
     }
 }

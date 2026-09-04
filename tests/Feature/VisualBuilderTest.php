@@ -11,6 +11,7 @@ use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
 use App\Services\Packaging\IterationPackager;
+use App\Services\Publishing\GitHubPublisher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -64,7 +65,7 @@ class VisualBuilderTest extends TestCase
     {
         Storage::fake('local');
         $user = User::factory()->create();
-        $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm']);
+        $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'docker_enabled' => true]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
         $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
         $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true]);
@@ -87,6 +88,10 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/routes/generated.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/visual-builder.json');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/tests.yml');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/Dockerfile');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/compose.yaml');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/publish-image.yml');
         $this->assertSame('generated', $iteration->fresh()->status);
 
         app(IterationValidator::class)->run($iteration);
@@ -275,6 +280,33 @@ class VisualBuilderTest extends TestCase
         $processes->assertStop('visual-builder-preview-'.$project->id);
         $this->assertSame('stopped', $run->fresh()->status);
     }
+
+    public function test_github_publisher_commits_and_pushes_an_assembled_application(): void
+    {
+        $runner = new FakeProcessRunner;
+        $this->app->instance(ProcessRunner::class, $runner);
+        $user = User::factory()->create();
+        $outputPath = storage_path('framework/testing/github-app');
+        if (! is_dir($outputPath)) {
+            mkdir($outputPath, recursive: true);
+        }
+        touch($outputPath.DIRECTORY_SEPARATOR.'artisan');
+        $project = $user->builderProjects()->create([
+            'name' => 'GitHub App',
+            'slug' => 'github-app',
+            'output_path' => $outputPath,
+            'status' => 'assembled',
+        ]);
+        $iteration = $project->iterations()->create(['number' => 3, 'name' => 'Release']);
+
+        $run = app(GitHubPublisher::class)->publish($iteration, 'cjrowell1980/generated-app');
+
+        $this->assertSame('passed', $run->status);
+        $this->assertSame('published', $project->fresh()->status);
+        $this->assertSame('cjrowell1980/generated-app', $project->fresh()->github_repository);
+        $this->assertContains(['git', 'commit', '-m', 'Build iteration 3'], $runner->commands);
+        $this->assertContains(['git', 'push', '--set-upstream', 'origin', 'HEAD'], $runner->commands);
+    }
 }
 
 final class FakeProcessRunner implements ProcessRunner
@@ -291,6 +323,10 @@ final class FakeProcessRunner implements ProcessRunner
             file_put_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php', "<?php\n");
         }
 
-        return ['successful' => true, 'output' => implode(' ', $command), 'exit_code' => 0];
+        $output = $command === ['git', 'remote', 'get-url', 'origin']
+            ? 'https://github.com/cjrowell1980/generated-app.git'
+            : implode(' ', $command);
+
+        return ['successful' => true, 'output' => $output, 'exit_code' => 0];
     }
 }
