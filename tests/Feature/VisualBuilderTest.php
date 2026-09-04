@@ -595,6 +595,34 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('already exists', $second->output);
     }
 
+    public function test_assembler_supports_a_page_free_api_project(): void
+    {
+        Storage::fake('local');
+        $runner = new FakeProcessRunner;
+        $this->app->instance(ProcessRunner::class, $runner);
+        $user = User::factory()->create();
+        $outputPath = Storage::disk('local')->path('assembled/service-api');
+        mkdir(dirname($outputPath), recursive: true);
+        $project = $user->builderProjects()->create([
+            'name' => 'Service API',
+            'slug' => 'service-api',
+            'template' => 'api',
+            'database_driver' => 'sqlite',
+            'output_path' => $outputPath,
+        ]);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+        $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+
+        app(IterationValidator::class)->run($iteration);
+        app(LaravelArtifactGenerator::class)->generate($iteration);
+        $run = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
+
+        $this->assertSame('passed', $run->status);
+        $this->assertStringNotContainsString("require __DIR__.'/generated.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php'));
+        $this->assertStringContainsString("require __DIR__.'/generated-api.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'api.php'));
+    }
+
     public function test_preview_server_has_a_managed_native_lifecycle(): void
     {
         $processes = ChildProcess::fake();

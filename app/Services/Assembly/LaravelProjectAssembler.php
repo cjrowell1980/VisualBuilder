@@ -120,11 +120,14 @@ class LaravelProjectAssembler
 
     private function wireGeneratedRoutes(string $outputPath): void
     {
-        $routesPath = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php';
-        $contents = $this->files->get($routesPath);
-        $require = "require __DIR__.'/generated.php';";
-        if (! str_contains($contents, $require)) {
-            $this->files->append($routesPath, PHP_EOL.$require.PHP_EOL);
+        $generatedWeb = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'generated.php';
+        if (is_file($generatedWeb)) {
+            $routesPath = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php';
+            $contents = $this->files->get($routesPath);
+            $require = "require __DIR__.'/generated.php';";
+            if (! str_contains($contents, $require)) {
+                $this->files->append($routesPath, PHP_EOL.$require.PHP_EOL);
+            }
         }
 
         $generatedApi = $outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'generated-api.php';
