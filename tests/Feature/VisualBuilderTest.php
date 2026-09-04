@@ -260,7 +260,18 @@ class VisualBuilderTest extends TestCase
             ->set('relationshipName', 'customer')
             ->set('relationshipType', 'belongsTo')
             ->set('relationshipTargetId', $customer->id)
-            ->call('addRelationship')
+            ->call('addRelationship');
+        $relationship = $contact->relationships()->firstOrFail();
+        $component
+            ->call('editRelationship', $relationship->id)
+            ->set('relationshipName', 'customerAccount')
+            ->set('relationshipType', 'hasOne')
+            ->call('saveRelationship');
+        $this->assertSame('customerAccount', $relationship->fresh()->name);
+        $this->assertSame('hasOne', $relationship->fresh()->type);
+        $this->assertNull($relationship->fresh()->foreign_key);
+
+        $component
             ->set('pageName', 'Contacts')
             ->set('pageSlug', 'contacts')
             ->set('pageType', 'index')
@@ -350,6 +361,7 @@ class VisualBuilderTest extends TestCase
         $secondField = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'position' => 1]);
         $firstPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Customers', 'slug' => 'customers', 'position' => 0]);
         $secondPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Create customer', 'slug' => 'customers/create', 'position' => 1]);
+        $relationship = $model->relationships()->create(['target_model_id' => $model->id, 'name' => 'parent', 'type' => 'belongsTo', 'foreign_key' => 'parent_id']);
         $firstControl = $firstPage->controls()->create(['model_field_id' => $firstField->id, 'control_type' => 'input', 'label' => 'Name', 'position' => 0]);
         $secondControl = $firstPage->controls()->create(['model_field_id' => $secondField->id, 'control_type' => 'input', 'label' => 'Email', 'position' => 1]);
 
@@ -368,9 +380,11 @@ class VisualBuilderTest extends TestCase
         $component->call('deleteControl', $firstControl->id);
         $component->call('deleteField', $firstField->id);
         $component->call('deletePage', $secondPage->id);
+        $component->call('deleteRelationship', $relationship->id);
         $this->assertModelMissing($firstControl);
         $this->assertModelMissing($firstField);
         $this->assertModelMissing($secondPage);
+        $this->assertModelMissing($relationship);
 
         $component->call('deleteModel', $model->id);
         $this->assertModelMissing($model);

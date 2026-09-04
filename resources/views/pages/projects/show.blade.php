@@ -60,6 +60,8 @@ new class extends Component
 
     public ?int $relationshipTargetId = null;
 
+    public ?int $editingRelationshipId = null;
+
     public string $pageName = '';
 
     public string $pageSlug = '';
@@ -271,19 +273,68 @@ new class extends Component
     public function addRelationship(): void
     {
         $source = $this->iteration()->models()->findOrFail($this->selectedModelId);
-        $target = $this->iteration()->models()->findOrFail($this->relationshipTargetId);
         $data = $this->validate([
-            'relationshipName' => ['required', 'regex:/^[a-z][A-Za-z0-9]*$/', 'max:80'],
+            'relationshipName' => ['required', 'regex:/^[a-z][A-Za-z0-9]*$/', 'max:80', Rule::unique('model_relationships', 'name')->where('source_model_id', $source->id)],
             'relationshipType' => ['required', Rule::in(['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'])],
+            'relationshipTargetId' => ['required', Rule::exists('model_definitions', 'id')->where('build_iteration_id', $source->build_iteration_id)],
         ]);
+        $target = $this->iteration()->models()->findOrFail($data['relationshipTargetId']);
         $source->relationships()->create([
             'target_model_id' => $target->id,
             'name' => $data['relationshipName'],
             'type' => $data['relationshipType'],
             'foreign_key' => $data['relationshipType'] === 'belongsTo' ? Str::snake($data['relationshipName']).'_id' : null,
         ]);
-        $this->reset('relationshipName', 'relationshipTargetId');
+        $this->resetRelationshipEditor();
         $this->touchDesign();
+    }
+
+    public function editRelationship(int $relationshipId): void
+    {
+        $source = $this->iteration()->models()->findOrFail($this->selectedModelId);
+        $relationship = $source->relationships()->findOrFail($relationshipId);
+        $this->editingRelationshipId = $relationship->id;
+        $this->relationshipName = $relationship->name;
+        $this->relationshipType = $relationship->type;
+        $this->relationshipTargetId = $relationship->target_model_id;
+    }
+
+    public function saveRelationship(): void
+    {
+        $source = $this->iteration()->models()->findOrFail($this->selectedModelId);
+        $relationship = $source->relationships()->findOrFail($this->editingRelationshipId);
+        $data = $this->validate([
+            'relationshipName' => ['required', 'regex:/^[a-z][A-Za-z0-9]*$/', 'max:80', Rule::unique('model_relationships', 'name')->where('source_model_id', $source->id)->ignore($relationship->id)],
+            'relationshipType' => ['required', Rule::in(['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'])],
+            'relationshipTargetId' => ['required', Rule::exists('model_definitions', 'id')->where('build_iteration_id', $source->build_iteration_id)],
+        ]);
+        $relationship->update([
+            'target_model_id' => $data['relationshipTargetId'],
+            'name' => $data['relationshipName'],
+            'type' => $data['relationshipType'],
+            'foreign_key' => $data['relationshipType'] === 'belongsTo' ? Str::snake($data['relationshipName']).'_id' : null,
+        ]);
+        $this->resetRelationshipEditor();
+        $this->touchDesign();
+    }
+
+    public function deleteRelationship(int $relationshipId): void
+    {
+        $source = $this->iteration()->models()->findOrFail($this->selectedModelId);
+        $source->relationships()->findOrFail($relationshipId)->delete();
+        $this->resetRelationshipEditor();
+        $this->touchDesign();
+    }
+
+    public function cancelRelationshipEdit(): void
+    {
+        $this->resetRelationshipEditor();
+    }
+
+    private function resetRelationshipEditor(): void
+    {
+        $this->reset('editingRelationshipId', 'relationshipName', 'relationshipTargetId');
+        $this->relationshipType = 'belongsTo';
     }
 
     public function addPage(): void
@@ -727,7 +778,7 @@ new class extends Component
                 @if ($selected)
                     <div class="flex justify-between"><div><flux:heading>{{ $selected->name }}</flux:heading><flux:text>{{ $selected->table_name }}</flux:text></div><div class="flex items-center gap-2"><flux:badge>{{ $selected->getAttribute('timestamps') ? 'timestamps' : 'no timestamps' }}</flux:badge>@if($selected->soft_deletes)<flux:badge color="amber">soft deletes</flux:badge>@endif<flux:badge>{{ $selected->fields->count() }} fields</flux:badge><flux:button wire:click="editModel({{ $selected->id }})" size="sm" variant="ghost" icon="pencil-square" /><flux:button wire:click="deleteModel({{ $selected->id }})" wire:confirm="Delete this model and its fields and relationships?" size="sm" variant="danger" icon="trash" /></div></div>
                     <div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">@forelse ($selected->fields as $field)<div class="grid grid-cols-[1fr_7rem_8rem_auto] items-center gap-3 border-b border-zinc-100 px-4 py-3 text-sm last:border-0 dark:border-zinc-800"><div><div>{{ $field->label }}</div><code class="text-xs">{{ $field->name }}</code></div><span>{{ $field->type }}</span><span class="text-xs text-zinc-500">{{ $field->nullable ? 'nullable' : 'required' }}{{ $field->unique ? ' · unique' : '' }}</span><div class="flex gap-1"><flux:button wire:click="editField({{ $field->id }})" size="xs" variant="ghost" icon="pencil-square" /><flux:button wire:click="moveField({{ $field->id }}, 'up')" size="xs" variant="ghost" icon="arrow-up" /><flux:button wire:click="moveField({{ $field->id }}, 'down')" size="xs" variant="ghost" icon="arrow-down" /><flux:button wire:click="deleteField({{ $field->id }})" wire:confirm="Delete this field?" size="xs" variant="danger" icon="trash" /></div></div>@empty<div class="p-10 text-center text-sm text-zinc-500">Add the first field using the inspector.</div>@endforelse</div>
-                    <div class="mt-7"><flux:heading size="sm">Relationships</flux:heading><div class="mt-3 space-y-2">@forelse($selected->relationships as $relationship)<div class="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800"><code>{{ $relationship->name }}()</code><span>{{ $relationship->type }} {{ $relationship->target->name }}</span></div>@empty<flux:text>No relationships defined.</flux:text>@endforelse</div></div>
+                    <div class="mt-7"><flux:heading size="sm">Relationships</flux:heading><div class="mt-3 space-y-2">@forelse($selected->relationships as $relationship)<div class="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800"><code>{{ $relationship->name }}()</code><div class="flex items-center gap-2"><span>{{ $relationship->type }} {{ $relationship->target->name }}</span><flux:button wire:click="editRelationship({{ $relationship->id }})" size="xs" variant="ghost" icon="pencil-square" /><flux:button wire:click="deleteRelationship({{ $relationship->id }})" wire:confirm="Delete this relationship?" size="xs" variant="danger" icon="trash" /></div></div>@empty<flux:text>No relationships defined.</flux:text>@endforelse</div></div>
                 @else<div class="grid h-full place-items-center"><flux:heading>Start with a model</flux:heading></div>@endif
             </main>
             <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700">
@@ -735,7 +786,7 @@ new class extends Component
                 <form wire:submit="{{ $editingFieldId ? 'saveField' : 'addField' }}" class="mt-4 space-y-3"><flux:input wire:model="fieldName" label="Name" placeholder="email_address" /><flux:input wire:model="fieldLabel" label="Label" placeholder="Email address" /><flux:select wire:model="fieldType" label="Type">@foreach (['string','text','integer','boolean','date','datetime','decimal','json'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="fieldRules" label="Validation rules" placeholder="required|email|max:255" /><flux:input wire:model="fieldDefault" label="Default value" placeholder="Optional" /><div class="flex flex-wrap gap-4"><flux:checkbox wire:model="fieldNullable" label="Nullable" /><flux:checkbox wire:model="fieldIndexed" label="Index" /><flux:checkbox wire:model="fieldUnique" label="Unique" /></div><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedModelId">{{ $editingFieldId ? 'Save field' : 'Add field' }}</flux:button>@if($editingFieldId)<flux:button wire:click="cancelFieldEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form>
                 <flux:separator class="my-6" />
                 <flux:heading size="sm">Relationship</flux:heading>
-                <form wire:submit="addRelationship" class="mt-4 space-y-3"><flux:input wire:model="relationshipName" label="Method name" placeholder="customer" /><flux:select wire:model="relationshipType" label="Type">@foreach(['belongsTo','hasOne','hasMany','belongsToMany'] as $type)<flux:select.option value="{{ $type }}">{{ $type }}</flux:select.option>@endforeach</flux:select><flux:select wire:model="relationshipTargetId" label="Target model"><flux:select.option value="">Select model</flux:select.option>@foreach($iteration->models as $model)<flux:select.option value="{{ $model->id }}">{{ $model->name }}</flux:select.option>@endforeach</flux:select><flux:button type="submit" class="w-full" :disabled="!$selectedModelId">Add relationship</flux:button></form>
+                <form wire:submit="{{ $editingRelationshipId ? 'saveRelationship' : 'addRelationship' }}" class="mt-4 space-y-3"><flux:input wire:model="relationshipName" label="Method name" placeholder="customer" /><flux:select wire:model="relationshipType" label="Type">@foreach(['belongsTo','hasOne','hasMany','belongsToMany'] as $type)<flux:select.option value="{{ $type }}">{{ $type }}</flux:select.option>@endforeach</flux:select><flux:select wire:model="relationshipTargetId" label="Target model"><flux:select.option value="">Select model</flux:select.option>@foreach($iteration->models as $model)<flux:select.option value="{{ $model->id }}">{{ $model->name }}</flux:select.option>@endforeach</flux:select><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedModelId">{{ $editingRelationshipId ? 'Save relationship' : 'Add relationship' }}</flux:button>@if($editingRelationshipId)<flux:button wire:click="cancelRelationshipEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form>
             </aside>
         </div>
     @elseif ($mode === 'pages')
