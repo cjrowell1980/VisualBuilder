@@ -675,6 +675,7 @@ new class extends Component
 
         return [
             'iteration' => $iteration,
+            'iterations' => $this->project->iterations()->latest('number')->get(),
             'validationRun' => $iteration->runs->firstWhere('type', 'validation'),
             'assemblyRun' => $iteration->runs->firstWhere('type', 'assembly'),
             'previewRun' => $iteration->runs->firstWhere('type', 'preview'),
@@ -751,7 +752,7 @@ new class extends Component
             <flux:heading size="xl" class="mt-2">{{ $project->name }}</flux:heading>
             <flux:text>Iteration {{ $iteration->number }} · {{ $project->template }} · {{ $project->database_driver }}{{ $project->docker_enabled ? ' · Docker' : '' }}</flux:text>
         </div>
-        <div class="flex gap-2"><flux:modal.trigger name="project-settings"><flux:button icon="cog-6-tooth">Settings</flux:button></flux:modal.trigger><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket" :disabled="$iteration->status !== 'validated'">Generate iteration</flux:button></div>
+        <div class="flex gap-2"><flux:dropdown position="bottom" align="end"><flux:button icon="clock" icon:trailing="chevron-down">{{ $iterations->count() }} iteration{{ $iterations->count() === 1 ? '' : 's' }}</flux:button><flux:menu>@foreach($iterations as $history)<div class="min-w-64 px-3 py-2"><div class="flex items-center justify-between gap-4 text-sm"><span>Iteration {{ $history->number }} · {{ $history->name }}</span><flux:badge :color="$history->status === 'generated' ? 'green' : ($history->status === 'validated' ? 'blue' : 'zinc')">{{ $history->status }}</flux:badge></div><div class="mt-1 text-xs text-zinc-500">{{ $history->created_at->format('j M Y, H:i') }}</div></div>@if(!$loop->last)<flux:menu.separator />@endif @endforeach</flux:menu></flux:dropdown><flux:modal.trigger name="project-settings"><flux:button icon="cog-6-tooth">Settings</flux:button></flux:modal.trigger><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket" :disabled="$iteration->status !== 'validated'">Generate iteration</flux:button></div>
     </header>
 
     <nav class="flex gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-700">

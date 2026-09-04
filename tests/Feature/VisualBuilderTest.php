@@ -452,6 +452,12 @@ class VisualBuilderTest extends TestCase
         $this->assertCount(1, $copy->pages->first()->controls);
         $this->assertCount(1, $copy->plugins);
         $this->assertNotSame($field->id, $copy->models->firstWhere('name', 'Contact')->fields->first()->id);
+
+        Livewire::actingAs($user)
+            ->test('pages::projects.show', ['project' => $project])
+            ->assertSee('Initial build')
+            ->assertSee('Add approvals')
+            ->assertSee('2 iterations');
     }
 
     public function test_validation_run_blocks_incomplete_designs_and_passes_complete_ones(): void
