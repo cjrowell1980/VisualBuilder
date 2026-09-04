@@ -5,6 +5,7 @@ namespace App\Services\Generation;
 use App\Models\BuildIteration;
 use App\Models\ControlDefinition;
 use App\Models\ModelDefinition;
+use App\Models\ModelField;
 use App\Models\ModelRelationship;
 use App\Models\PageDefinition;
 use Illuminate\Support\Facades\Storage;
@@ -38,6 +39,9 @@ class LaravelArtifactGenerator
                 }
             }
         }
+        if ($iteration->models->isNotEmpty()) {
+            $files[] = $this->write($root, 'tests/Feature/GeneratedSchemaTest.php', $this->schemaTest($iteration));
+        }
 
         foreach ($iteration->pages as $page) {
             $files[] = $this->write($root, "resources/views/pages/{$page->slug}.blade.php", $this->page($page));
@@ -64,7 +68,7 @@ class LaravelArtifactGenerator
             'plugins' => $iteration->plugins->map->only(['type', 'package', 'constraint', 'approved'])->values(),
             'models' => $iteration->models->map(fn (ModelDefinition $model) => [
                 ...$model->only(['name', 'table_name', 'soft_deletes', 'timestamps']),
-                'fields' => $model->fields->map->only(['name', 'label', 'type', 'nullable', 'indexed', 'unique', 'validation_rules'])->values(),
+                'fields' => $model->fields->map->only(['name', 'label', 'type', 'nullable', 'indexed', 'unique', 'default_value', 'validation_rules'])->values(),
             ])->values(),
             'pages' => $iteration->pages->map(fn (PageDefinition $page) => [
                 ...$page->only(['name', 'slug', 'page_type', 'layout']),
@@ -198,6 +202,7 @@ PHP;
                 'json' => 'json', default => 'string',
             };
             $chain = $field->nullable ? '->nullable()' : '';
+            $chain .= $this->migrationDefault($field);
             $chain .= $field->indexed ? '->index()' : '';
             $chain .= $field->unique ? '->unique()' : '';
 
@@ -235,6 +240,20 @@ return new class extends Migration
     }
 };
 PHP;
+    }
+
+    private function migrationDefault(ModelField $field): string
+    {
+        if ($field->default_value === null || $field->default_value === '') {
+            return '';
+        }
+        $value = match ($field->type) {
+            'integer', 'decimal' => $field->default_value,
+            'boolean' => in_array(strtolower($field->default_value), ['true', '1'], true) ? 'true' : 'false',
+            default => var_export($field->default_value, true),
+        };
+
+        return "->default({$value})";
     }
 
     private function page(PageDefinition $page): string
@@ -451,6 +470,39 @@ class {$model->name}Controller extends Controller
 
         return response()->json(null, 204);
     }
+}
+PHP;
+    }
+
+    private function schemaTest(BuildIteration $iteration): string
+    {
+        $methods = $iteration->models->map(function (ModelDefinition $model): string {
+            $method = 'test_'.$model->table_name.'_schema_is_available';
+            $columns = $model->fields->pluck('name')->prepend('id')->map(fn (string $column): string => "'{$column}'")->implode(', ');
+
+            return <<<PHP
+    public function {$method}(): void
+    {
+        \$this->assertTrue(Schema::hasTable('{$model->table_name}'));
+        \$this->assertTrue(Schema::hasColumns('{$model->table_name}', [{$columns}]));
+    }
+PHP;
+        })->implode("\n\n");
+
+        return <<<PHP
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+class GeneratedSchemaTest extends TestCase
+{
+    use RefreshDatabase;
+
+{$methods}
 }
 PHP;
     }

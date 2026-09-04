@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property string $name
  * @property string $type
+ * @property string|null $default_value
  * @property bool $nullable
  * @property bool $indexed
  */

@@ -69,7 +69,7 @@ class VisualBuilderTest extends TestCase
         $project = $user->builderProjects()->create(['name' => 'CRM', 'slug' => 'crm', 'template' => 'application-api', 'docker_enabled' => true]);
         $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
         $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
-        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true]);
+        $field = $model->fields()->create(['name' => 'email', 'label' => 'Email', 'type' => 'string', 'indexed' => true, 'unique' => true, 'default_value' => 'unknown@example.com']);
         $model->relationships()->create([
             'target_model_id' => $model->id,
             'name' => 'parent',
@@ -124,6 +124,7 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/publish-image.yml');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/routes/generated-api.php');
+        Storage::disk('local')->assertExists('generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php');
         $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
         $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
@@ -138,7 +139,7 @@ class VisualBuilderTest extends TestCase
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
-        $this->assertStringContainsString("string('email')->index()->unique()", $migrationSource);
+        $this->assertStringContainsString("string('email')->default('unknown@example.com')->index()->unique()", $migrationSource);
         $this->assertStringContainsString("foreignId('customer_id')->constrained('customers')", $pivotSource);
         $this->assertStringContainsString("foreignId('role_id')->constrained('roles')", $pivotSource);
         $this->assertStringContainsString("return ['records' => Customer::query()->latest()->get()]", $pageSource);
@@ -148,6 +149,7 @@ class VisualBuilderTest extends TestCase
         $showSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/show.blade.php');
         $routesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated.php');
         $apiRoutesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated-api.php');
+        $schemaTestSource = Storage::disk('local')->get('generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php');
         $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
         $this->assertStringContainsString('<flux:select.option value="primary">Primary</flux:select.option>', $createSource);
         $this->assertStringContainsString('<div class="max-w-2xl">', $createSource);
@@ -155,6 +157,8 @@ class VisualBuilderTest extends TestCase
         $this->assertStringNotContainsString('function save', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
         $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
+        $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email'])", $schemaTestSource);
+        $this->assertStringContainsString("Schema::hasColumns('roles', ['id', 'name'])", $schemaTestSource);
         foreach ([
             'generated/crm/iteration-1/app/Models/Customer.php',
             $migrationPath,
@@ -163,6 +167,7 @@ class VisualBuilderTest extends TestCase
             'generated/crm/iteration-1/resources/views/pages/customers/show.blade.php',
             'generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php',
             'generated/crm/iteration-1/routes/generated-api.php',
+            'generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php',
         ] as $generatedPhp) {
             $lint = new Process([PHP_BINARY, '-l', Storage::disk('local')->path($generatedPhp)]);
             $lint->run();
@@ -208,11 +213,20 @@ class VisualBuilderTest extends TestCase
             ->call('editField', $field->id)
             ->set('fieldLabel', 'Primary email')
             ->set('fieldRules', 'required|email')
+            ->set('fieldDefault', 'none@example.com')
             ->set('fieldIndexed', true)
             ->call('saveField');
         $this->assertSame('Primary email', $field->fresh()->label);
         $this->assertSame(['required', 'email'], $field->fresh()->validation_rules);
+        $this->assertSame('none@example.com', $field->fresh()->default_value);
         $this->assertTrue($field->fresh()->indexed);
+        $component
+            ->call('editField', $field->id)
+            ->set('fieldType', 'integer')
+            ->set('fieldDefault', 'not-a-number')
+            ->call('saveField')
+            ->assertHasErrors('fieldDefault');
+        $component->call('cancelFieldEdit');
 
         $component
             ->set('relationshipName', 'customer')

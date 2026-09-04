@@ -38,6 +38,8 @@ new class extends Component
 
     public string $fieldRules = '';
 
+    public string $fieldDefault = '';
+
     public bool $fieldNullable = false;
 
     public bool $fieldIndexed = false;
@@ -168,21 +170,26 @@ new class extends Component
             'fieldLabel' => ['nullable', 'string', 'max:100'],
             'fieldType' => ['required', Rule::in(['string', 'text', 'integer', 'boolean', 'date', 'datetime', 'decimal', 'json'])],
             'fieldRules' => ['nullable', 'string', 'max:500'],
+            'fieldDefault' => ['nullable', 'string', 'max:500'],
             'fieldNullable' => ['boolean'],
             'fieldIndexed' => ['boolean'],
             'fieldUnique' => ['boolean'],
         ]);
+        if (! $this->validateFieldDefault($data['fieldType'], $data['fieldDefault'])) {
+            return;
+        }
         $model->fields()->create([
             'name' => $data['fieldName'],
             'label' => $data['fieldLabel'] ?: Str::headline($data['fieldName']),
             'type' => $data['fieldType'],
             'validation_rules' => array_values(array_filter(array_map('trim', explode('|', $data['fieldRules'])))),
+            'default_value' => trim($data['fieldDefault']) === '' ? null : trim($data['fieldDefault']),
             'nullable' => $data['fieldNullable'],
             'indexed' => $data['fieldIndexed'],
             'unique' => $data['fieldUnique'],
             'position' => $model->fields()->count(),
         ]);
-        $this->reset('fieldName', 'fieldLabel', 'fieldRules', 'fieldNullable', 'fieldIndexed', 'fieldUnique');
+        $this->reset('fieldName', 'fieldLabel', 'fieldRules', 'fieldDefault', 'fieldNullable', 'fieldIndexed', 'fieldUnique');
         $this->touchDesign();
     }
 
@@ -195,6 +202,7 @@ new class extends Component
         $this->fieldLabel = (string) $field->label;
         $this->fieldType = $field->type;
         $this->fieldRules = implode('|', $field->validation_rules ?? []);
+        $this->fieldDefault = (string) $field->default_value;
         $this->fieldNullable = $field->nullable;
         $this->fieldIndexed = $field->indexed;
         $this->fieldUnique = $field->unique;
@@ -209,15 +217,20 @@ new class extends Component
             'fieldLabel' => ['nullable', 'string', 'max:100'],
             'fieldType' => ['required', Rule::in(['string', 'text', 'integer', 'boolean', 'date', 'datetime', 'decimal', 'json'])],
             'fieldRules' => ['nullable', 'string', 'max:500'],
+            'fieldDefault' => ['nullable', 'string', 'max:500'],
             'fieldNullable' => ['boolean'],
             'fieldIndexed' => ['boolean'],
             'fieldUnique' => ['boolean'],
         ]);
+        if (! $this->validateFieldDefault($data['fieldType'], $data['fieldDefault'])) {
+            return;
+        }
         $field->update([
             'name' => $data['fieldName'],
             'label' => $data['fieldLabel'] ?: Str::headline($data['fieldName']),
             'type' => $data['fieldType'],
             'validation_rules' => array_values(array_filter(array_map('trim', explode('|', $data['fieldRules'])))),
+            'default_value' => trim($data['fieldDefault']) === '' ? null : trim($data['fieldDefault']),
             'nullable' => $data['fieldNullable'],
             'indexed' => $data['fieldIndexed'],
             'unique' => $data['fieldUnique'],
@@ -228,7 +241,7 @@ new class extends Component
 
     public function cancelFieldEdit(): void
     {
-        $this->reset('editingFieldId', 'fieldName', 'fieldLabel', 'fieldRules', 'fieldNullable', 'fieldIndexed', 'fieldUnique');
+        $this->reset('editingFieldId', 'fieldName', 'fieldLabel', 'fieldRules', 'fieldDefault', 'fieldNullable', 'fieldIndexed', 'fieldUnique');
         $this->fieldType = 'string';
     }
 
@@ -632,6 +645,28 @@ new class extends Component
             ->values()
             ->all();
     }
+
+    private function validateFieldDefault(string $type, string $default): bool
+    {
+        $default = trim($default);
+        if ($default === '') {
+            return true;
+        }
+        $valid = match ($type) {
+            'integer', 'decimal' => is_numeric($default),
+            'boolean' => in_array(strtolower($default), ['true', 'false', '1', '0'], true),
+            'json' => false,
+            default => true,
+        };
+        if (! $valid) {
+            $message = $type === 'json'
+                ? 'JSON defaults are not portable across the supported databases.'
+                : "Enter a valid {$type} default value.";
+            $this->addError('fieldDefault', $message);
+        }
+
+        return $valid;
+    }
 };
 ?>
 
@@ -674,7 +709,7 @@ new class extends Component
             </main>
             <aside class="border-l border-zinc-200 p-5 dark:border-zinc-700">
                 <flux:heading size="sm">Field inspector</flux:heading>
-                <form wire:submit="{{ $editingFieldId ? 'saveField' : 'addField' }}" class="mt-4 space-y-3"><flux:input wire:model="fieldName" label="Name" placeholder="email_address" /><flux:input wire:model="fieldLabel" label="Label" placeholder="Email address" /><flux:select wire:model="fieldType" label="Type">@foreach (['string','text','integer','boolean','date','datetime','decimal','json'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="fieldRules" label="Validation rules" placeholder="required|email|max:255" /><div class="flex flex-wrap gap-4"><flux:checkbox wire:model="fieldNullable" label="Nullable" /><flux:checkbox wire:model="fieldIndexed" label="Index" /><flux:checkbox wire:model="fieldUnique" label="Unique" /></div><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedModelId">{{ $editingFieldId ? 'Save field' : 'Add field' }}</flux:button>@if($editingFieldId)<flux:button wire:click="cancelFieldEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form>
+                <form wire:submit="{{ $editingFieldId ? 'saveField' : 'addField' }}" class="mt-4 space-y-3"><flux:input wire:model="fieldName" label="Name" placeholder="email_address" /><flux:input wire:model="fieldLabel" label="Label" placeholder="Email address" /><flux:select wire:model="fieldType" label="Type">@foreach (['string','text','integer','boolean','date','datetime','decimal','json'] as $type)<flux:select.option value="{{ $type }}">{{ ucfirst($type) }}</flux:select.option>@endforeach</flux:select><flux:input wire:model="fieldRules" label="Validation rules" placeholder="required|email|max:255" /><flux:input wire:model="fieldDefault" label="Default value" placeholder="Optional" /><div class="flex flex-wrap gap-4"><flux:checkbox wire:model="fieldNullable" label="Nullable" /><flux:checkbox wire:model="fieldIndexed" label="Index" /><flux:checkbox wire:model="fieldUnique" label="Unique" /></div><div class="flex gap-2"><flux:button type="submit" class="flex-1" :disabled="!$selectedModelId">{{ $editingFieldId ? 'Save field' : 'Add field' }}</flux:button>@if($editingFieldId)<flux:button wire:click="cancelFieldEdit" type="button" variant="ghost">Cancel</flux:button>@endif</div></form>
                 <flux:separator class="my-6" />
                 <flux:heading size="sm">Relationship</flux:heading>
                 <form wire:submit="addRelationship" class="mt-4 space-y-3"><flux:input wire:model="relationshipName" label="Method name" placeholder="customer" /><flux:select wire:model="relationshipType" label="Type">@foreach(['belongsTo','hasOne','hasMany','belongsToMany'] as $type)<flux:select.option value="{{ $type }}">{{ $type }}</flux:select.option>@endforeach</flux:select><flux:select wire:model="relationshipTargetId" label="Target model"><flux:select.option value="">Select model</flux:select.option>@foreach($iteration->models as $model)<flux:select.option value="{{ $model->id }}">{{ $model->name }}</flux:select.option>@endforeach</flux:select><flux:button type="submit" class="w-full" :disabled="!$selectedModelId">Add relationship</flux:button></form>
