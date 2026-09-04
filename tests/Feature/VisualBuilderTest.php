@@ -136,6 +136,12 @@ class VisualBuilderTest extends TestCase
             ->first(fn (string $path): bool => str_contains($path, 'create_customer_role_table'));
         $this->assertNotNull($pivotPath);
         $pivotSource = Storage::disk('local')->get($pivotPath);
+        $orderedMigrations = Storage::disk('local')->files('generated/crm/iteration-1/database/migrations');
+        sort($orderedMigrations);
+        $roleMigrationPath = collect($orderedMigrations)->first(fn (string $path): bool => str_contains($path, 'create_roles_table'));
+        $this->assertNotNull($roleMigrationPath);
+        $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($migrationPath, $orderedMigrations, true));
+        $this->assertLessThan(array_search($pivotPath, $orderedMigrations, true), array_search($roleMigrationPath, $orderedMigrations, true));
         $pageSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers.blade.php');
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);

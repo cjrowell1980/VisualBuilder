@@ -24,17 +24,23 @@ class LaravelArtifactGenerator
         Storage::disk('local')->deleteDirectory($root);
 
         $files = [];
+        $migrationTime = now();
+        $migrationSequence = 0;
         $generatedPivots = [];
         foreach ($iteration->models as $model) {
             $files[] = $this->write($root, "app/Models/{$model->name}.php", $this->model($model));
-            $files[] = $this->write($root, 'database/migrations/'.now()->format('Y_m_d_His').'_create_'.$model->table_name.'_table.php', $this->migration($model));
+            $timestamp = $migrationTime->addSeconds($migrationSequence++)->format('Y_m_d_His');
+            $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$model->table_name.'_table.php', $this->migration($model));
             if ($iteration->project->template !== 'application') {
                 $files[] = $this->write($root, "app/Http/Controllers/Api/{$model->name}Controller.php", $this->apiController($model));
             }
+        }
+        foreach ($iteration->models as $model) {
             foreach ($model->relationships->where('type', 'belongsToMany') as $relationship) {
                 $pivot = $this->pivotName($model, $relationship->target);
                 if (! in_array($pivot, $generatedPivots, true)) {
-                    $files[] = $this->write($root, 'database/migrations/'.now()->format('Y_m_d_His').'_create_'.$pivot.'_table.php', $this->pivotMigration($model, $relationship, $pivot));
+                    $timestamp = $migrationTime->addSeconds($migrationSequence++)->format('Y_m_d_His');
+                    $files[] = $this->write($root, 'database/migrations/'.$timestamp.'_create_'.$pivot.'_table.php', $this->pivotMigration($model, $relationship, $pivot));
                     $generatedPivots[] = $pivot;
                 }
             }
