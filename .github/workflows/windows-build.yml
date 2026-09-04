@@ -1,0 +1,60 @@
+name: Build Windows application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      NATIVEPHP_APP_VERSION: 1.0.${{ github.run_number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Configure Flux Pro authentication
+        shell: pwsh
+        run: composer config --global http-basic.composer.fluxui.dev "$env:FLUX_USERNAME" "$env:FLUX_LICENSE_KEY"
+        env:
+          FLUX_USERNAME: ${{ secrets.FLUX_USERNAME }}
+          FLUX_LICENSE_KEY: ${{ secrets.FLUX_LICENSE_KEY }}
+
+      - name: Install application
+        shell: pwsh
+        run: |
+          composer install --no-interaction --prefer-dist
+          Copy-Item .env.example .env
+          New-Item database/database.sqlite -ItemType File -Force
+          php artisan key:generate
+          php artisan migrate --force
+          npm ci
+
+      - name: Run quality checks
+        run: composer ci:check
+
+      - name: Build unsigned internal-test installer
+        run: php artisan native:build win x64 --no-interaction
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: VisualBuilder-Windows-x64
+          path: nativephp/**
+          if-no-files-found: error
+          retention-days: 14

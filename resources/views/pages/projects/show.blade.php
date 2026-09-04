@@ -76,11 +76,17 @@ new class extends Component
 
     public ?string $githubMessage = null;
 
+    public string $projectOutputPath = '';
+
+    public bool $projectDockerEnabled = false;
+
     public function mount(BuilderProject $project): void
     {
         abort_unless($project->user_id === auth()->id(), 403);
         $this->project = $project;
         $this->githubRepository = (string) $project->github_repository;
+        $this->projectOutputPath = (string) $project->output_path;
+        $this->projectDockerEnabled = (bool) $project->docker_enabled;
     }
 
     public function setMode(string $mode): void
@@ -248,6 +254,18 @@ new class extends Component
         $this->project->refresh();
     }
 
+    public function saveProjectSettings(): void
+    {
+        $data = $this->validate([
+            'projectOutputPath' => ['required', 'string', 'max:500'],
+            'projectDockerEnabled' => ['boolean'],
+        ]);
+        $this->project->update([
+            'output_path' => $data['projectOutputPath'],
+            'docker_enabled' => $data['projectDockerEnabled'],
+        ]);
+    }
+
     public function createIteration(IterationCloner $cloner): void
     {
         $data = $this->validate(['iterationName' => ['required', 'string', 'max:100']]);
@@ -296,7 +314,7 @@ new class extends Component
             <flux:heading size="xl" class="mt-2">{{ $project->name }}</flux:heading>
             <flux:text>Iteration {{ $iteration->number }} · {{ $project->template }} · {{ $project->database_driver }}{{ $project->docker_enabled ? ' · Docker' : '' }}</flux:text>
         </div>
-        <div class="flex gap-2"><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket">Generate iteration</flux:button></div>
+        <div class="flex gap-2"><flux:modal.trigger name="project-settings"><flux:button icon="cog-6-tooth">Settings</flux:button></flux:modal.trigger><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket">Generate iteration</flux:button></div>
     </header>
 
     <nav class="flex gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-700">
@@ -308,6 +326,8 @@ new class extends Component
     @if ($generatedPath)<flux:callout variant="success" icon="check-circle" heading="Iteration generated"><flux:callout.text>{{ $generatedPath }}</flux:callout.text></flux:callout>@endif
 
     <flux:modal name="new-iteration" class="md:w-96"><form wire:submit="createIteration" class="space-y-5"><div><flux:heading size="lg">Create iteration</flux:heading><flux:text class="mt-1">Clone the current design into a new editable version.</flux:text></div><flux:input wire:model="iterationName" label="Iteration name" placeholder="Add customer approvals" /><div class="flex justify-end gap-2"><flux:modal.close><flux:button variant="ghost">Cancel</flux:button></flux:modal.close><flux:button type="submit" variant="primary">Create iteration</flux:button></div></form></flux:modal>
+
+    <flux:modal name="project-settings" class="md:w-[32rem]"><form wire:submit="saveProjectSettings" class="space-y-5"><div><flux:heading size="lg">Project settings</flux:heading><flux:text class="mt-1">Choose a new, empty output path for each assembled build.</flux:text></div><flux:input wire:model="projectOutputPath" label="Application output folder" placeholder="C:\Projects\my-app" /><flux:checkbox wire:model="projectDockerEnabled" label="Include Docker environment" /><div class="flex justify-end gap-2"><flux:modal.close><flux:button variant="ghost">Cancel</flux:button></flux:modal.close><flux:button type="submit" variant="primary">Save settings</flux:button></div></form></flux:modal>
 
     @if ($mode === 'schema')
         <div class="grid min-h-[40rem] overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 lg:grid-cols-[17rem_1fr_21rem]">

@@ -46,6 +46,8 @@ composer native:dev
 
 Create an unsigned internal-test installer with `php artisan native:build win`. Public releases must use source-bundle protection and Windows code signing before distribution.
 
+The manually triggered **Build Windows application** GitHub Actions workflow produces a 14-day internal-test artifact. It intentionally does not publish a public release: configure NativePHP Bifrost source protection and Windows code signing before enabling public release automation.
+
 ## Flux Pro
 
 Flux Pro is installed as a private Composer package. Authenticate locally with the credentials from your Flux account; `auth.json` is ignored and used as a Docker BuildKit secret:
