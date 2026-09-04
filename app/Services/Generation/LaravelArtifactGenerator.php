@@ -8,6 +8,7 @@ use App\Models\ModelDefinition;
 use App\Models\ModelField;
 use App\Models\ModelRelationship;
 use App\Models\PageDefinition;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -293,7 +294,11 @@ PHP;
     private function page(PageDefinition $page): string
     {
         $model = $page->modelDefinition;
-        $boundFields = $page->controls->pluck('field')->filter()->unique('id')->values();
+        $boundFields = $page->controls
+            ->map(fn (ControlDefinition $control): ?ModelField => $control->field)
+            ->filter()
+            ->unique('id')
+            ->values();
         $properties = $boundFields->map(fn ($field): string => "    public mixed \${$field->name} = null;")->implode("\n");
         $properties = $properties === '' ? '' : "\n{$properties}\n";
         $behaviour = '';
@@ -325,12 +330,11 @@ PHP;
 PHP;
         }
         if ($model && $boundFields->isNotEmpty() && ! in_array($page->page_type, ['index', 'show'], true)) {
-            $rules = $boundFields->mapWithKeys(function ($field): array {
-                $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
-
-                return [$field->name => $rules];
-            })->all();
-            $rulesCode = var_export($rules, true);
+            $ignoreExpression = $page->page_type === 'edit' ? '$this->recordId' : null;
+            $rulesCode = $this->validationRulesCode($boundFields, $model, $ignoreExpression);
+            if ($boundFields->contains(fn (ModelField $field): bool => $this->fieldHasUniqueRule($field))) {
+                $modelImport .= "use Illuminate\\Validation\\Rule;\n";
+            }
             $fieldNames = $boundFields->pluck('name')->map(fn (string $name): string => "'{$name}'")->implode(', ');
             $persistence = $page->page_type === 'edit'
                 ? "{$model->name}::query()->findOrFail(\$this->recordId)->update(\$validated);"
@@ -455,12 +459,11 @@ PHP;
     private function apiController(ModelDefinition $model): string
     {
         $variable = Str::camel($model->name);
-        $rules = $model->fields->mapWithKeys(function ($field): array {
-            $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
-
-            return [$field->name => $rules];
-        })->all();
-        $rulesCode = var_export($rules, true);
+        $storeRulesCode = $this->validationRulesCode($model->fields, $model);
+        $updateRulesCode = $this->validationRulesCode($model->fields, $model, '$'.$variable);
+        $ruleImport = $model->fields->contains(fn (ModelField $field): bool => $this->fieldHasUniqueRule($field))
+            ? "use Illuminate\\Validation\\Rule;\n"
+            : '';
 
         return <<<PHP
 <?php
@@ -471,6 +474,7 @@ use App\Http\Controllers\Controller;
 use App\Models\{$model->name};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+{$ruleImport}
 
 class {$model->name}Controller extends Controller
 {
@@ -481,7 +485,7 @@ class {$model->name}Controller extends Controller
 
     public function store(Request \$request): JsonResponse
     {
-        \${$variable} = {$model->name}::query()->create(\$request->validate({$rulesCode}));
+        \${$variable} = {$model->name}::query()->create(\$request->validate({$storeRulesCode}));
 
         return response()->json(\${$variable}, 201);
     }
@@ -493,7 +497,7 @@ class {$model->name}Controller extends Controller
 
     public function update(Request \$request, {$model->name} \${$variable}): JsonResponse
     {
-        \${$variable}->update(\$request->validate({$rulesCode}));
+        \${$variable}->update(\$request->validate({$updateRulesCode}));
 
         return response()->json(\${$variable}->refresh());
     }
@@ -506,6 +510,44 @@ class {$model->name}Controller extends Controller
     }
 }
 PHP;
+    }
+
+    /** @param Collection<int, ModelField> $fields */
+    private function validationRulesCode(Collection $fields, ModelDefinition $model, ?string $ignoreExpression = null): string
+    {
+        $lines = $fields->map(function (ModelField $field) use ($model, $ignoreExpression): string {
+            $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
+            $hasUniqueRule = $this->fieldHasUniqueRule($field);
+            $expressions = collect($rules)
+                ->reject(fn (string $rule): bool => str_starts_with($rule, 'unique'))
+                ->map(fn (string $rule): string => var_export($rule, true));
+            if ($hasUniqueRule) {
+                $unique = "Rule::unique('{$model->table_name}', '{$field->name}')";
+                if ($ignoreExpression !== null) {
+                    $unique .= "->ignore({$ignoreExpression})";
+                }
+                $expressions->push($unique);
+            }
+
+            return "    '{$field->name}' => [".$expressions->implode(', ').'],';
+        })->implode("\n");
+
+        return "[\n{$lines}\n]";
+    }
+
+    private function fieldHasUniqueRule(ModelField $field): bool
+    {
+        if ($field->unique) {
+            return true;
+        }
+
+        foreach ($field->validation_rules ?? [] as $rule) {
+            if (str_starts_with($rule, 'unique')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function schemaTest(BuildIteration $iteration): string

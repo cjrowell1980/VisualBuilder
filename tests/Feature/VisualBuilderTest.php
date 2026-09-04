@@ -172,12 +172,17 @@ class VisualBuilderTest extends TestCase
         $schemaTestSource = Storage::disk('local')->get('generated/crm/iteration-1/tests/Feature/GeneratedSchemaTest.php');
         $routesTestSource = Storage::disk('local')->get('generated/crm/iteration-1/tests/Feature/GeneratedRoutesTest.php');
         $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
+        $this->assertStringContainsString("Rule::unique('customers', 'email')", $createSource);
         $this->assertStringContainsString('<flux:select.option value="primary">Primary</flux:select.option>', $createSource);
         $this->assertStringContainsString('<div class="max-w-2xl">', $createSource);
         $this->assertStringContainsString('findOrFail($this->recordId)->update($validated)', $editSource);
+        $this->assertStringContainsString("Rule::unique('customers', 'email')->ignore(\$this->recordId)", $editSource);
         $this->assertStringNotContainsString('function save', $showSource);
         $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
         $this->assertStringContainsString("Route::apiResource('customers', CustomerController::class)", $apiRoutesSource);
+        $apiControllerSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Http/Controllers/Api/CustomerController.php');
+        $this->assertStringContainsString("Rule::unique('customers', 'email')", $apiControllerSource);
+        $this->assertStringContainsString("Rule::unique('customers', 'email')->ignore(\$customer)", $apiControllerSource);
         $this->assertStringContainsString("Schema::hasColumns('customers', ['id', 'email'])", $schemaTestSource);
         $this->assertStringContainsString("Schema::hasColumns('roles', ['id', 'name'])", $schemaTestSource);
         $this->assertStringContainsString("Route::has('customers.create')", $routesTestSource);

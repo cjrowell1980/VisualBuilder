@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $default_value
  * @property bool $nullable
  * @property bool $indexed
+ * @property bool $unique
+ * @property list<string>|null $validation_rules
  */
 class ModelField extends Model
 {
