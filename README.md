@@ -1,6 +1,6 @@
 # Visual Builder
 
-Visual Builder turns a versioned application schema into reviewable Laravel code. The first vertical slice supports authenticated projects, build iterations, models, typed fields, and deterministic model/migration generation.
+VisualBuilder is a Windows-first visual IDE that turns a versioned application design into a tested Laravel project. It combines schema and page design, Livewire/Flux code generation, managed preview processes, Docker environments, ZIP packaging, and GitHub delivery in one desktop workflow.
 
 ## Stack
 
@@ -60,10 +60,13 @@ Add GitHub Actions secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY` for CI. 
 
 ## Delivery model
 
-1. A project owns ordered, immutable-in-intent build iterations.
-2. Each iteration describes models, fields, plugins, UI, authorization, and deployment configuration.
-3. Generation writes to `storage/app/private/generated/{project}/iteration-{n}` for review.
-4. Plugin requirements are recorded separately and require approval before installation.
-5. GitHub Actions verifies the application; version tags publish an immutable GHCR image.
+1. Create a web, API, or combined project and choose its database, Docker option, and output folder.
+2. Design models, typed fields, relationships, pages, controls, select options, and layout widths.
+3. Clone the current design into a new iteration before making a new version.
+4. Validate the current design. Any subsequent edit invalidates the validation and generated bundle.
+5. Generate models, migrations, pivot tables, Livewire pages, authenticated API controllers, routes, Docker files, and CI workflows.
+6. Assemble a clean Laravel project, install explicitly approved Composer/npm packages, compile assets, migrate, and run its tests.
+7. Launch and stop the assembled application through NativePHP's managed preview process.
+8. Package either the review bundle or complete application, or commit and push it to a private-by-default GitHub repository.
 
-GitHub repository creation and production deployment are deliberately separate from code generation because they require an explicit owner, repository visibility, target host, and secrets.
+See [Build phases](docs/BUILD_PHASES.md) for the current verification and release boundaries.
