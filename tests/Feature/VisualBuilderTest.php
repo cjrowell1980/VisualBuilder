@@ -22,12 +22,19 @@ class VisualBuilderTest extends TestCase
             ->test('pages::projects.index')
             ->set('name', 'Customer Portal')
             ->set('description', 'Manage customer accounts')
+            ->set('template', 'application-api')
+            ->set('databaseDriver', 'pgsql')
+            ->set('dockerEnabled', true)
+            ->set('outputPath', 'C:\\Projects\\customer-portal')
             ->call('createProject')
             ->assertRedirect();
 
         $project = BuilderProject::firstOrFail();
         $this->assertSame($user->id, $project->user_id);
         $this->assertSame('customer-portal', $project->slug);
+        $this->assertSame('application-api', $project->template);
+        $this->assertTrue($project->docker_enabled);
+        $this->assertSame('C:\\Projects\\customer-portal', $project->output_path);
         $this->assertDatabaseHas('build_iterations', [
             'builder_project_id' => $project->id,
             'number' => 1,

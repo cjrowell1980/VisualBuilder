@@ -8,7 +8,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BuilderProject extends Model
 {
-    protected $fillable = ['user_id', 'name', 'slug', 'description', 'database_driver', 'github_repository'];
+    protected $fillable = [
+        'user_id', 'name', 'slug', 'description', 'template', 'database_driver',
+        'docker_enabled', 'output_path', 'status', 'github_repository',
+    ];
+
+    protected function casts(): array
+    {
+        return ['docker_enabled' => 'boolean'];
+    }
 
     /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo

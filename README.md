@@ -36,6 +36,16 @@ docker compose exec app php artisan migrate --force
 
 The application is available at `http://localhost:8080`. PostgreSQL data is stored in the named `postgres-data` volume.
 
+## Windows desktop
+
+VisualBuilder uses NativePHP Desktop 2. Run the Windows development application with:
+
+```bash
+composer native:dev
+```
+
+Create an unsigned internal-test installer with `php artisan native:build win`. Public releases must use source-bundle protection and Windows code signing before distribution.
+
 ## Flux Pro
 
 Flux Pro is installed as a private Composer package. Authenticate locally with the credentials from your Flux account; `auth.json` is ignored and used as a Docker BuildKit secret:

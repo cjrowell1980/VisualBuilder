@@ -1,18 +1,33 @@
 <?php
 
 use App\Models\BuilderProject;
+use App\Services\System\DevelopmentEnvironment;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
 new class extends Component {
     public string $name = '';
     public string $description = '';
+    public string $template = 'application';
+    public string $databaseDriver = 'pgsql';
+    public bool $dockerEnabled = false;
+    public string $outputPath = '';
+    public array $capabilities = [];
+
+    public function mount(DevelopmentEnvironment $environment): void
+    {
+        $this->capabilities = $environment->capabilities();
+    }
 
     public function createProject(): void
     {
         $data = $this->validate([
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:1000'],
+            'template' => ['required', 'in:application,api,application-api'],
+            'databaseDriver' => ['required', 'in:pgsql,mysql,sqlite'],
+            'dockerEnabled' => ['boolean'],
+            'outputPath' => ['nullable', 'string', 'max:500'],
         ]);
 
         $base = Str::slug($data['name']) ?: 'project';
@@ -22,7 +37,15 @@ new class extends Component {
             $slug = $base.'-'.$suffix++;
         }
 
-        $project = auth()->user()->builderProjects()->create([...$data, 'slug' => $slug]);
+        $project = auth()->user()->builderProjects()->create([
+            'name' => $data['name'],
+            'description' => $data['description'],
+            'slug' => $slug,
+            'template' => $data['template'],
+            'database_driver' => $data['databaseDriver'],
+            'docker_enabled' => $data['dockerEnabled'],
+            'output_path' => $data['outputPath'] ?: null,
+        ]);
         $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
 
         $this->redirectRoute('projects.show', $project, navigate: true);
@@ -35,17 +58,29 @@ new class extends Component {
 };
 ?>
 
-<div class="mx-auto w-full max-w-6xl space-y-8 p-6 lg:p-10">
+<div class="mx-auto w-full max-w-7xl space-y-8 p-6 lg:p-10">
     <div>
         <flux:heading size="xl">Visual Builder</flux:heading>
         <flux:text class="mt-2">Design Laravel applications as versioned schemas, then generate reviewable code.</flux:text>
     </div>
 
-    <div class="grid gap-6 lg:grid-cols-[22rem_1fr]">
+    <div class="grid gap-6 xl:grid-cols-[24rem_1fr_18rem]">
         <form wire:submit="createProject" class="space-y-5 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:heading>Create a project</flux:heading>
             <flux:input wire:model="name" label="Project name" placeholder="Operations portal" />
             <flux:textarea wire:model="description" label="What should it do?" rows="4" />
+            <flux:select wire:model="template" label="Project type">
+                <flux:select.option value="application">Web application</flux:select.option>
+                <flux:select.option value="api">API only</flux:select.option>
+                <flux:select.option value="application-api">Web application and API</flux:select.option>
+            </flux:select>
+            <flux:select wire:model="databaseDriver" label="Database">
+                <flux:select.option value="pgsql">PostgreSQL</flux:select.option>
+                <flux:select.option value="mysql">MySQL</flux:select.option>
+                <flux:select.option value="sqlite">SQLite</flux:select.option>
+            </flux:select>
+            <flux:checkbox wire:model="dockerEnabled" label="Include Docker environment" />
+            <flux:input wire:model="outputPath" label="Project folder (optional)" placeholder="C:\Projects\my-app" />
             <flux:button type="submit" variant="primary" class="w-full">Start building</flux:button>
         </form>
 
@@ -67,5 +102,20 @@ new class extends Component {
                 </div>
             @endforelse
         </div>
+
+        <aside class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:heading size="sm">Development environment</flux:heading>
+            <flux:text class="mt-1">Tools detected on this computer.</flux:text>
+            <div class="mt-5 space-y-3">
+                @foreach ($capabilities as $capability)
+                    <div class="flex items-center justify-between gap-3 text-sm">
+                        <span class="truncate" title="{{ $capability['version'] }}">{{ $capability['label'] }}</span>
+                        <flux:badge :color="$capability['available'] ? 'green' : 'red'">
+                            {{ $capability['available'] ? 'Ready' : 'Missing' }}
+                        </flux:badge>
+                    </div>
+                @endforeach
+            </div>
+        </aside>
     </div>
 </div>
