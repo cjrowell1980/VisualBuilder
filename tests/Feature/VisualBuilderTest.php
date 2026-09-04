@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Native\Desktop\Facades\ChildProcess;
 use Native\Desktop\Facades\Shell;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class VisualBuilderTest extends TestCase
@@ -86,6 +87,15 @@ class VisualBuilderTest extends TestCase
             'control_type' => 'input',
             'label' => 'Email address',
         ]);
+        $page->controls()->create(['control_type' => 'table', 'label' => 'Customer records']);
+        $createPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Create customer', 'slug' => 'customers/create', 'page_type' => 'create']);
+        $createPage->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Email']);
+        $createPage->controls()->create(['control_type' => 'button', 'label' => 'Save']);
+        $editPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Edit customer', 'slug' => 'customers/edit', 'page_type' => 'edit']);
+        $editPage->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Email']);
+        $editPage->controls()->create(['control_type' => 'button', 'label' => 'Save']);
+        $showPage = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Customer', 'slug' => 'customers/show', 'page_type' => 'show']);
+        $showPage->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Email']);
 
         app(IterationValidator::class)->run($iteration);
         $result = app(LaravelArtifactGenerator::class)->generate($iteration->fresh());
@@ -108,7 +118,27 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('public function parent(): BelongsTo', $modelSource);
         $this->assertStringContainsString("foreignId('parent_id')->constrained('customers')", $migrationSource);
         $this->assertStringContainsString("string('email')->index()->unique()", $migrationSource);
-        $this->assertStringContainsString('Customer::query()->create($validated)', $pageSource);
+        $this->assertStringContainsString("return ['records' => Customer::query()->latest()->get()]", $pageSource);
+        $this->assertStringContainsString('@forelse ($records as $record)', $pageSource);
+        $createSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/create.blade.php');
+        $editSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/edit.blade.php');
+        $showSource = Storage::disk('local')->get('generated/crm/iteration-1/resources/views/pages/customers/show.blade.php');
+        $routesSource = Storage::disk('local')->get('generated/crm/iteration-1/routes/generated.php');
+        $this->assertStringContainsString('Customer::query()->create($validated)', $createSource);
+        $this->assertStringContainsString('findOrFail($this->recordId)->update($validated)', $editSource);
+        $this->assertStringNotContainsString('function save', $showSource);
+        $this->assertStringContainsString("'/customers/edit/{record}'", $routesSource);
+        foreach ([
+            'generated/crm/iteration-1/app/Models/Customer.php',
+            $migrationPath,
+            'generated/crm/iteration-1/resources/views/pages/customers/create.blade.php',
+            'generated/crm/iteration-1/resources/views/pages/customers/edit.blade.php',
+            'generated/crm/iteration-1/resources/views/pages/customers/show.blade.php',
+        ] as $generatedPhp) {
+            $lint = new Process([PHP_BINARY, '-l', Storage::disk('local')->path($generatedPhp)]);
+            $lint->run();
+            $this->assertTrue($lint->isSuccessful(), $lint->getErrorOutput());
+        }
         $this->assertSame('generated', $iteration->fresh()->status);
 
         $package = app(IterationPackager::class)->zip($iteration->fresh());

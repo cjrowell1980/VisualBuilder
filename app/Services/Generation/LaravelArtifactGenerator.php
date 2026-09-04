@@ -181,10 +181,35 @@ PHP;
         $boundFields = $page->controls->pluck('field')->filter()->unique('id')->values();
         $properties = $boundFields->map(fn ($field): string => "    public mixed \${$field->name} = null;")->implode("\n");
         $properties = $properties === '' ? '' : "\n{$properties}\n";
-        $save = '';
+        $behaviour = '';
+        $hasSave = false;
         $modelImport = '';
-        if ($model && $boundFields->isNotEmpty()) {
+        if ($model) {
             $modelImport = "use App\\Models\\{$model->name};\n";
+        }
+        if ($model && $page->page_type === 'index') {
+            $behaviour = <<<PHP
+
+    public function with(): array
+    {
+        return ['records' => {$model->name}::query()->latest()->get()];
+    }
+PHP;
+        } elseif ($model && in_array($page->page_type, ['edit', 'show'], true)) {
+            $assignments = $boundFields->map(fn ($field): string => "        \$this->{$field->name} = \$model->{$field->name};")->implode("\n");
+            $behaviour = <<<PHP
+
+    public int \$recordId;
+
+    public function mount(int \$record): void
+    {
+        \$model = {$model->name}::query()->findOrFail(\$record);
+        \$this->recordId = \$model->id;
+{$assignments}
+    }
+PHP;
+        }
+        if ($model && $boundFields->isNotEmpty() && ! in_array($page->page_type, ['index', 'show'], true)) {
             $rules = $boundFields->mapWithKeys(function ($field): array {
                 $rules = $field->validation_rules ?: [$field->nullable ? 'nullable' : 'required'];
 
@@ -192,18 +217,22 @@ PHP;
             })->all();
             $rulesCode = var_export($rules, true);
             $fieldNames = $boundFields->pluck('name')->map(fn (string $name): string => "'{$name}'")->implode(', ');
-            $save = <<<PHP
+            $persistence = $page->page_type === 'edit'
+                ? "{$model->name}::query()->findOrFail(\$this->recordId)->update(\$validated);"
+                : "{$model->name}::query()->create(\$validated);";
+            $reset = $page->page_type === 'edit' ? '' : "\n        \$this->reset({$fieldNames});";
+            $behaviour .= <<<PHP
 
     public function save(): void
     {
         \$validated = \$this->validate({$rulesCode});
-        {$model->name}::query()->create(\$validated);
-        \$this->reset({$fieldNames});
+        {$persistence}{$reset}
         session()->flash('status', '{$model->name} saved.');
     }
 PHP;
+            $hasSave = true;
         }
-        $controls = $page->controls->map(fn (ControlDefinition $control) => $this->control($control, $save !== ''))->implode("\n\n");
+        $controls = $page->controls->map(fn (ControlDefinition $control) => $this->control($control, $page, $hasSave))->implode("\n\n");
         $title = e($page->name);
 
         return <<<BLADE
@@ -212,7 +241,7 @@ PHP;
 {$modelImport}use Livewire\Component;
 
 new class extends Component
-{{$properties}{$save}
+{{$properties}{$behaviour}
 };
 ?>
 
@@ -226,7 +255,7 @@ new class extends Component
 BLADE;
     }
 
-    private function control(ControlDefinition $control, bool $hasSave): string
+    private function control(ControlDefinition $control, PageDefinition $page, bool $hasSave): string
     {
         $label = e($control->label ?: Str::headline($control->control_type));
         $field = $control->model_field_id === null
@@ -242,17 +271,45 @@ BLADE;
             'button' => $hasSave
                 ? "    <flux:button wire:click=\"save\" variant=\"primary\">{$label}</flux:button>"
                 : "    <flux:button variant=\"primary\">{$label}</flux:button>",
-            'table' => "    <div class=\"overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700\"><div class=\"p-4\">{$label}</div></div>",
+            'table' => $page->page_type === 'index' && $page->modelDefinition
+                ? $this->table($page)
+                : "    <div class=\"overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700\"><div class=\"p-4\">{$label}</div></div>",
             default => "    <flux:input wire:model=\"{$field}\" label=\"{$label}\" />",
         };
+    }
+
+    private function table(PageDefinition $page): string
+    {
+        $headers = $page->modelDefinition->fields->map(fn ($field): string => '                    <th class="px-4 py-3 text-left">'.e($field->label ?: Str::headline($field->name)).'</th>')->implode("\n");
+        $cells = $page->modelDefinition->fields->map(fn ($field): string => '                        <td class="px-4 py-3">{{ $record->'.$field->name.' }}</td>')->implode("\n");
+
+        return <<<BLADE
+    <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+        <table class="w-full text-sm">
+            <thead><tr>
+{$headers}
+            </tr></thead>
+            <tbody>
+                @forelse (\$records as \$record)
+                    <tr class="border-t border-zinc-200 dark:border-zinc-700">
+{$cells}
+                    </tr>
+                @empty
+                    <tr><td class="px-4 py-6 text-center" colspan="99">No records found.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+BLADE;
     }
 
     private function routes(BuildIteration $iteration): string
     {
         $routes = $iteration->pages->map(function (PageDefinition $page): string {
             $name = Str::of($page->slug)->replace('/', '.')->toString();
+            $uri = in_array($page->page_type, ['edit', 'show'], true) ? "/{$page->slug}/{record}" : "/{$page->slug}";
 
-            return "Route::livewire('/{$page->slug}', 'pages::{$page->slug}')->name('{$name}');";
+            return "Route::livewire('{$uri}', 'pages::{$page->slug}')->name('{$name}');";
         })->implode("\n");
 
         return <<<PHP
