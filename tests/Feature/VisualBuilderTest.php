@@ -87,7 +87,8 @@ class VisualBuilderTest extends TestCase
             'label' => 'Email address',
         ]);
 
-        $result = app(LaravelArtifactGenerator::class)->generate($iteration);
+        app(IterationValidator::class)->run($iteration);
+        $result = app(LaravelArtifactGenerator::class)->generate($iteration->fresh());
 
         $this->assertContains('app/Models/Customer.php', $result['files']);
         Storage::disk('local')->assertExists('generated/crm/iteration-1/app/Models/Customer.php');
@@ -110,7 +111,6 @@ class VisualBuilderTest extends TestCase
         $this->assertStringContainsString('Customer::query()->create($validated)', $pageSource);
         $this->assertSame('generated', $iteration->fresh()->status);
 
-        app(IterationValidator::class)->run($iteration);
         $package = app(IterationPackager::class)->zip($iteration->fresh());
         $this->assertSame('zip', $package->format);
         $this->assertSame(64, strlen($package->checksum));
@@ -158,8 +158,21 @@ class VisualBuilderTest extends TestCase
             ->set('controlFieldId', $field->id)
             ->call('addControl');
 
+        $component
+            ->set('pluginType', 'npm')
+            ->set('pluginPackage', 'sortablejs')
+            ->set('pluginConstraint', '^1.15')
+            ->call('addPlugin');
+        $plugin = $iteration->plugins()->firstOrFail();
+        $this->assertFalse($plugin->approved);
+        $component->call('togglePluginApproval', $plugin->id);
+        $this->assertTrue($plugin->fresh()->approved);
+        $component->call('removePlugin', $plugin->id);
+
         $this->assertDatabaseHas('model_relationships', ['source_model_id' => $contact->id, 'target_model_id' => $customer->id]);
         $this->assertDatabaseHas('control_definitions', ['page_definition_id' => $page->id, 'model_field_id' => $field->id]);
+        $this->assertDatabaseMissing('plugin_requirements', ['id' => $plugin->id]);
+        $this->assertSame('draft', $iteration->fresh()->status);
     }
 
     public function test_docker_generation_honours_the_selected_database_driver(): void
@@ -180,7 +193,12 @@ class VisualBuilderTest extends TestCase
                 'docker_enabled' => true,
             ]);
             $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
-            app(LaravelArtifactGenerator::class)->generate($iteration);
+            $model = $iteration->models()->create(['name' => 'Record', 'table_name' => 'records']);
+            $field = $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+            $page = $iteration->pages()->create(['model_definition_id' => $model->id, 'name' => 'Records', 'slug' => 'records', 'page_type' => 'index']);
+            $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+            app(IterationValidator::class)->run($iteration);
+            app(LaravelArtifactGenerator::class)->generate($iteration->fresh());
             $root = "generated/docker-{$driver}/iteration-1";
 
             $this->assertStringContainsString($extension, Storage::disk('local')->get("{$root}/Dockerfile"));
@@ -274,6 +292,7 @@ class VisualBuilderTest extends TestCase
         ]);
         $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
         $iteration->plugins()->create(['package' => 'spatie/laravel-permission', 'constraint' => '^7.0', 'approved' => true]);
+        $iteration->plugins()->create(['package' => 'sortablejs', 'constraint' => '^1.15', 'type' => 'npm', 'approved' => true]);
 
         app(IterationValidator::class)->run($iteration);
         app(LaravelArtifactGenerator::class)->generate($iteration);
@@ -284,6 +303,7 @@ class VisualBuilderTest extends TestCase
         $this->assertFileExists($outputPath.DIRECTORY_SEPARATOR.'visual-builder.json');
         $this->assertStringContainsString("require __DIR__.'/generated.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php'));
         $this->assertContains(['composer', 'require', 'spatie/laravel-permission:^7.0'], $runner->commands);
+        $this->assertContains(['npm', 'install', 'sortablejs@^1.15'], $runner->commands);
         $this->assertContains(['npm', 'run', 'build'], $runner->commands);
 
         $second = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());

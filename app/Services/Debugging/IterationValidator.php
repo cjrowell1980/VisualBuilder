@@ -54,6 +54,7 @@ class IterationValidator
             'output' => $failed ? 'Iteration validation failed.' : 'Iteration validation passed.',
             'finished_at' => now(),
         ]);
+        $iteration->update(['status' => $failed ? 'draft' : 'validated', 'generated_at' => null]);
 
         return $run->fresh();
     }

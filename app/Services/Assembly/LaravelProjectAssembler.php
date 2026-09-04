@@ -51,12 +51,16 @@ class LaravelProjectAssembler
             $this->wireGeneratedRoutes($outputPath);
 
             $commands = [];
-            foreach ($iteration->plugins->where('approved', true) as $plugin) {
+            foreach ($iteration->plugins->where('approved', true)->where('type', 'composer') as $plugin) {
                 $requirement = $plugin->package.($plugin->constraint ? ':'.$plugin->constraint : '');
                 $commands[] = [['composer', 'require', $requirement], "Composer package {$plugin->package}"];
             }
+            $commands[] = [['npm', 'install'], 'Frontend dependencies'];
+            foreach ($iteration->plugins->where('approved', true)->where('type', 'npm') as $plugin) {
+                $constraint = $plugin->constraint && $plugin->constraint !== '*' ? '@'.$plugin->constraint : '';
+                $commands[] = [['npm', 'install', $plugin->package.$constraint], "npm package {$plugin->package}"];
+            }
             $commands = [...$commands,
-                [['npm', 'install'], 'Frontend dependencies'],
                 [['npm', 'run', 'build'], 'Frontend build'],
                 [[PHP_BINARY, 'artisan', 'migrate', '--force'], 'Database migration'],
                 [[PHP_BINARY, 'artisan', 'test'], 'Application tests'],

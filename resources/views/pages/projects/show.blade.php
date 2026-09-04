@@ -80,6 +80,12 @@ new class extends Component
 
     public bool $projectDockerEnabled = false;
 
+    public string $pluginPackage = '';
+
+    public string $pluginConstraint = '*';
+
+    public string $pluginType = 'composer';
+
     public function mount(BuilderProject $project): void
     {
         abort_unless($project->user_id === auth()->id(), 403);
@@ -104,6 +110,7 @@ new class extends Component
         ]);
         $this->selectedModelId = $model->id;
         $this->modelName = '';
+        $this->touchDesign();
     }
 
     public function addField(): void
@@ -129,6 +136,7 @@ new class extends Component
             'position' => $model->fields()->count(),
         ]);
         $this->reset('fieldName', 'fieldLabel', 'fieldRules', 'fieldNullable', 'fieldIndexed', 'fieldUnique');
+        $this->touchDesign();
     }
 
     public function addRelationship(): void
@@ -146,6 +154,7 @@ new class extends Component
             'foreign_key' => $data['relationshipType'] === 'belongsTo' ? Str::snake($data['relationshipName']).'_id' : null,
         ]);
         $this->reset('relationshipName', 'relationshipTargetId');
+        $this->touchDesign();
     }
 
     public function addPage(): void
@@ -173,6 +182,7 @@ new class extends Component
         ]);
         $this->selectedPageId = $page->id;
         $this->reset('pageName', 'pageSlug', 'pageModelId');
+        $this->touchDesign();
     }
 
     public function addControl(): void
@@ -202,6 +212,7 @@ new class extends Component
             'position' => $page->controls()->count(),
         ]);
         $this->reset('controlLabel', 'controlFieldId');
+        $this->touchDesign();
     }
 
     public function generate(LaravelArtifactGenerator $generator): void
@@ -264,6 +275,43 @@ new class extends Component
             'output_path' => $data['projectOutputPath'],
             'docker_enabled' => $data['projectDockerEnabled'],
         ]);
+        $this->touchDesign();
+    }
+
+    public function addPlugin(): void
+    {
+        $data = $this->validate([
+            'pluginPackage' => ['required', 'string', 'max:200', 'regex:/^@?[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)?$/i'],
+            'pluginConstraint' => ['required', 'string', 'max:80', 'regex:/^[A-Za-z0-9.*^~<>=| -]+$/'],
+            'pluginType' => ['required', Rule::in(['composer', 'npm'])],
+        ]);
+        if ($data['pluginType'] === 'composer' && ! preg_match('/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i', $data['pluginPackage'])) {
+            $this->addError('pluginPackage', 'Composer packages must use vendor/package format.');
+
+            return;
+        }
+        $this->iteration()->plugins()->create([
+            'package' => $data['pluginPackage'],
+            'constraint' => $data['pluginConstraint'],
+            'type' => $data['pluginType'],
+            'approved' => false,
+        ]);
+        $this->reset('pluginPackage');
+        $this->pluginConstraint = '*';
+        $this->touchDesign();
+    }
+
+    public function togglePluginApproval(int $pluginId): void
+    {
+        $plugin = $this->iteration()->plugins()->findOrFail($pluginId);
+        $plugin->update(['approved' => ! $plugin->approved]);
+        $this->touchDesign();
+    }
+
+    public function removePlugin(int $pluginId): void
+    {
+        $this->iteration()->plugins()->findOrFail($pluginId)->delete();
+        $this->touchDesign();
     }
 
     public function createIteration(IterationCloner $cloner): void
@@ -304,6 +352,11 @@ new class extends Component
     {
         return $this->project->iterations()->latest('number')->firstOrFail();
     }
+
+    private function touchDesign(): void
+    {
+        $this->iteration()->update(['status' => 'draft', 'generated_at' => null]);
+    }
 };
 ?>
 
@@ -314,7 +367,7 @@ new class extends Component
             <flux:heading size="xl" class="mt-2">{{ $project->name }}</flux:heading>
             <flux:text>Iteration {{ $iteration->number }} · {{ $project->template }} · {{ $project->database_driver }}{{ $project->docker_enabled ? ' · Docker' : '' }}</flux:text>
         </div>
-        <div class="flex gap-2"><flux:modal.trigger name="project-settings"><flux:button icon="cog-6-tooth">Settings</flux:button></flux:modal.trigger><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket">Generate iteration</flux:button></div>
+        <div class="flex gap-2"><flux:modal.trigger name="project-settings"><flux:button icon="cog-6-tooth">Settings</flux:button></flux:modal.trigger><flux:modal.trigger name="new-iteration"><flux:button icon="document-duplicate">New iteration</flux:button></flux:modal.trigger><flux:button wire:click="generate" variant="primary" icon="code-bracket" :disabled="$iteration->status !== 'validated'">Generate iteration</flux:button></div>
     </header>
 
     <nav class="flex gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-700">
@@ -366,7 +419,7 @@ new class extends Component
                 @if($previewMessage)<flux:callout class="mt-6" :variant="$previewRun?->status === 'failed' ? 'danger' : 'success'" heading="Debugger"><flux:callout.text>{{ $previewMessage }}</flux:callout.text></flux:callout>@endif
                 <div class="mt-6 flex flex-wrap gap-2"><flux:button wire:click="startPreview" icon="play" :disabled="$assemblyRun?->status !== 'passed' || $previewRun?->status === 'running'">Launch debugger</flux:button><flux:button wire:click="openPreview" icon="arrow-top-right-on-square" :disabled="$previewRun?->status !== 'running'">Open application</flux:button><flux:button wire:click="stopPreview" variant="danger" icon="stop" :disabled="$previewRun?->status !== 'running'">Stop</flux:button></div>
             </div>
-            <aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$validationRun?->status === 'passed' ? 'green' : ($validationRun?->status === 'failed' ? 'red' : 'zinc')">{{ $validationRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge :color="$assemblyRun?->status === 'passed' ? 'green' : ($assemblyRun?->status === 'failed' ? 'red' : 'zinc')">{{ $assemblyRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Debugger</span><flux:badge :color="$previewRun?->status === 'running' ? 'green' : ($previewRun?->status === 'failed' ? 'red' : 'zinc')">{{ $previewRun?->status ?? 'Pending' }}</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$validationRun?->status !== 'passed'">Generate review bundle</flux:button></aside>
+            <aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Pipeline</flux:heading><div class="mt-5 space-y-4 text-sm"><div class="flex justify-between"><span>Schema validation</span><flux:badge :color="$iteration->status === 'validated' || $iteration->status === 'generated' ? 'green' : ($validationRun?->status === 'failed' ? 'red' : 'zinc')">{{ $iteration->status === 'validated' || $iteration->status === 'generated' ? 'passed' : ($validationRun?->status ?? 'Pending') }}</flux:badge></div><div class="flex justify-between"><span>Code generation</span><flux:badge :color="$iteration->status === 'generated' ? 'green' : 'zinc'">{{ $iteration->status }}</flux:badge></div><div class="flex justify-between"><span>Runtime tests</span><flux:badge :color="$assemblyRun?->status === 'passed' ? 'green' : ($assemblyRun?->status === 'failed' ? 'red' : 'zinc')">{{ $assemblyRun?->status ?? 'Pending' }}</flux:badge></div><div class="flex justify-between"><span>Debugger</span><flux:badge :color="$previewRun?->status === 'running' ? 'green' : ($previewRun?->status === 'failed' ? 'red' : 'zinc')">{{ $previewRun?->status ?? 'Pending' }}</flux:badge></div></div><flux:button wire:click="generate" class="mt-6 w-full" :disabled="$iteration->status !== 'validated'">Generate review bundle</flux:button></aside>
         </div>
     @else
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
@@ -374,6 +427,11 @@ new class extends Component
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Build runnable application</flux:heading><flux:text class="mt-2">Create a clean Laravel application at <code>{{ $project->output_path ?: 'an output folder selected in project setup' }}</code>, apply this iteration, install approved packages, build assets, migrate, and run its tests.</flux:text>@if($assemblyMessage)<flux:callout class="mt-6" :variant="$assemblyRun?->status === 'passed' ? 'success' : 'danger'" :icon="$assemblyRun?->status === 'passed' ? 'check-circle' : 'x-circle'" heading="Project assembly"><flux:callout.text>{{ $assemblyMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="assembleProject" wire:confirm="Create the application in the configured output folder? Existing folders are never overwritten." class="mt-6" variant="primary" icon="wrench-screwdriver" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated' || !$project->output_path">Build and test application</flux:button></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Package iteration</flux:heading><flux:text class="mt-2">Create an immutable ZIP of the generated review bundle. Git and Docker release targets use the same validated iteration.</flux:text>@if($packagePath)<flux:callout class="mt-6" variant="success" icon="archive-box" heading="ZIP package ready"><flux:callout.text>{{ $packagePath }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="packageIteration" class="mt-6" icon="archive-box" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated'">Create ZIP package</flux:button></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish to GitHub</flux:heading><flux:text class="mt-2">Commit the assembled application and push it using your authenticated GitHub CLI. New repositories are private by default.</flux:text><flux:input wire:model="githubRepository" class="mt-5" label="Repository" placeholder="owner/project-name" />@if($githubMessage)<flux:callout class="mt-5" :variant="$githubRun?->status === 'passed' ? 'success' : 'danger'" heading="GitHub delivery"><flux:callout.text>{{ $githubMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="publishToGitHub" wire:confirm="Commit and push this assembled application to GitHub?" class="mt-5" icon="cloud-arrow-up" :disabled="$assemblyRun?->status !== 'passed'">Commit and push</flux:button></div>
+                <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900">
+                    <flux:heading size="lg">Packages and plugins</flux:heading><flux:text class="mt-2">Declare Composer or npm dependencies. Nothing is installed until you explicitly approve it.</flux:text>
+                    <form wire:submit="addPlugin" class="mt-5 grid gap-3 md:grid-cols-[8rem_1fr_8rem_auto]"><flux:select wire:model="pluginType" label="Type"><flux:select.option value="composer">Composer</flux:select.option><flux:select.option value="npm">npm</flux:select.option></flux:select><flux:input wire:model="pluginPackage" label="Package" placeholder="vendor/package" /><flux:input wire:model="pluginConstraint" label="Version" placeholder="^1.0" /><flux:button type="submit" class="self-end">Add</flux:button></form>
+                    <div class="mt-5 space-y-2">@forelse($iteration->plugins as $plugin)<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><div><code>{{ $plugin->package }}:{{ $plugin->constraint }}</code><div class="mt-1 text-xs text-zinc-500">{{ strtoupper($plugin->type) }}</div></div><div class="flex gap-2"><flux:button wire:click="togglePluginApproval({{ $plugin->id }})" size="sm" :variant="$plugin->approved ? 'primary' : 'ghost'">{{ $plugin->approved ? 'Approved' : 'Approve' }}</flux:button><flux:button wire:click="removePlugin({{ $plugin->id }})" wire:confirm="Remove this dependency?" size="sm" variant="danger" icon="trash" /></div></div>@empty<flux:text>No additional dependencies.</flux:text>@endforelse</div>
+                </div>
             </div>
             <aside class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="sm">Packages</flux:heading><div class="mt-4 space-y-3">@forelse($iteration->packages as $package)<div class="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800"><div class="flex justify-between"><span>{{ strtoupper($package->format) }}</span><span>{{ number_format($package->bytes / 1024, 1) }} KB</span></div><code class="mt-2 block truncate text-xs">{{ $package->checksum }}</code></div>@empty<flux:text>No packages created.</flux:text>@endforelse</div></aside>
         </div>

@@ -15,6 +15,9 @@ class LaravelArtifactGenerator
     /** @return array{path: string, files: list<string>} */
     public function generate(BuildIteration $iteration): array
     {
+        if ($iteration->status !== 'validated') {
+            throw new \RuntimeException('Run validation after the latest design change before generating code.');
+        }
         $iteration->load('project', 'models.fields', 'models.relationships.target', 'pages.controls.field', 'pages.modelDefinition', 'plugins');
         $root = "generated/{$iteration->project->slug}/iteration-{$iteration->number}";
         Storage::disk('local')->deleteDirectory($root);
