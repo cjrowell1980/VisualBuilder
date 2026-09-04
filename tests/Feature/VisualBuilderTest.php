@@ -98,6 +98,8 @@ class VisualBuilderTest extends TestCase
         Storage::disk('local')->assertExists('generated/crm/iteration-1/Dockerfile');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/compose.yaml');
         Storage::disk('local')->assertExists('generated/crm/iteration-1/.github/workflows/publish-image.yml');
+        $this->assertStringContainsString('pdo_pgsql', Storage::disk('local')->get('generated/crm/iteration-1/Dockerfile'));
+        $this->assertStringContainsString('DB_CONNECTION: pgsql', Storage::disk('local')->get('generated/crm/iteration-1/compose.yaml'));
         $modelSource = Storage::disk('local')->get('generated/crm/iteration-1/app/Models/Customer.php');
         $migrationPath = Storage::disk('local')->files('generated/crm/iteration-1/database/migrations')[0];
         $migrationSource = Storage::disk('local')->get($migrationPath);
@@ -158,6 +160,32 @@ class VisualBuilderTest extends TestCase
 
         $this->assertDatabaseHas('model_relationships', ['source_model_id' => $contact->id, 'target_model_id' => $customer->id]);
         $this->assertDatabaseHas('control_definitions', ['page_definition_id' => $page->id, 'model_field_id' => $field->id]);
+    }
+
+    public function test_docker_generation_honours_the_selected_database_driver(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $expectations = [
+            'pgsql' => ['pdo_pgsql', 'DB_CONNECTION: pgsql'],
+            'mysql' => ['pdo_mysql', 'DB_CONNECTION: mysql'],
+            'sqlite' => ['pdo_sqlite', 'DB_CONNECTION: sqlite'],
+        ];
+
+        foreach ($expectations as $driver => [$extension, $connection]) {
+            $project = $user->builderProjects()->create([
+                'name' => strtoupper($driver),
+                'slug' => 'docker-'.$driver,
+                'database_driver' => $driver,
+                'docker_enabled' => true,
+            ]);
+            $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+            app(LaravelArtifactGenerator::class)->generate($iteration);
+            $root = "generated/docker-{$driver}/iteration-1";
+
+            $this->assertStringContainsString($extension, Storage::disk('local')->get("{$root}/Dockerfile"));
+            $this->assertStringContainsString($connection, Storage::disk('local')->get("{$root}/compose.yaml"));
+        }
     }
 
     public function test_new_iteration_clones_the_complete_editable_graph(): void

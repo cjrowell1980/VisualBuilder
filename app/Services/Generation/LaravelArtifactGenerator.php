@@ -32,7 +32,7 @@ class LaravelArtifactGenerator
             $files[] = $this->write($root, 'routes/generated.php', $this->routes($iteration));
         }
         if ($iteration->project->docker_enabled) {
-            $files[] = $this->write($root, 'Dockerfile', $this->dockerfile());
+            $files[] = $this->write($root, 'Dockerfile', $this->dockerfile($iteration));
             $files[] = $this->write($root, 'compose.yaml', $this->compose($iteration));
             $files[] = $this->write($root, 'docker/nginx.conf', $this->nginx());
             $files[] = $this->write($root, 'docker/supervisord.conf', $this->supervisor());
@@ -263,9 +263,20 @@ Route::middleware(['auth'])->group(function (): void {
 PHP;
     }
 
-    private function dockerfile(): string
+    private function dockerfile(BuildIteration $iteration): string
     {
-        return <<<'DOCKERFILE'
+        $packages = match ($iteration->project->database_driver) {
+            'pgsql' => 'libpq-dev icu-dev nginx supervisor',
+            'mysql' => 'icu-dev nginx supervisor',
+            default => 'sqlite-dev icu-dev nginx supervisor',
+        };
+        $extensions = match ($iteration->project->database_driver) {
+            'pgsql' => 'pdo_pgsql intl opcache',
+            'mysql' => 'pdo_mysql intl opcache',
+            default => 'pdo_sqlite intl opcache',
+        };
+
+        return <<<DOCKERFILE
 FROM node:22-alpine AS assets
 WORKDIR /app
 COPY package*.json ./
@@ -280,8 +291,8 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
 FROM php:8.4-fpm-alpine
-RUN apk add --no-cache libpq-dev icu-dev nginx supervisor \
-    && docker-php-ext-install pdo_pgsql intl opcache
+RUN apk add --no-cache {$packages} \
+    && docker-php-ext-install {$extensions}
 WORKDIR /var/www/html
 COPY . .
 COPY --from=dependencies /app/vendor ./vendor
@@ -298,6 +309,65 @@ DOCKERFILE;
     private function compose(BuildIteration $iteration): string
     {
         $database = $iteration->project->slug;
+
+        if ($iteration->project->database_driver === 'sqlite') {
+            return <<<'YAML'
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: ${APP_KEY}
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /var/www/html/database/database.sqlite
+    volumes:
+      - sqlite-data:/var/www/html/database
+volumes:
+  sqlite-data:
+YAML;
+        }
+
+        if ($iteration->project->database_driver === 'mysql') {
+            return <<<YAML
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: \${APP_KEY}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: {$database}
+      DB_USERNAME: {$database}
+      DB_PASSWORD: local-development-only
+    depends_on:
+      mysql:
+        condition: service_healthy
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: {$database}
+      MYSQL_USER: {$database}
+      MYSQL_PASSWORD: local-development-only
+      MYSQL_ROOT_PASSWORD: local-root-only
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  mysql-data:
+YAML;
+        }
 
         return <<<YAML
 services:
