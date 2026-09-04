@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\ProcessRunner;
 use App\Models\BuilderProject;
 use App\Models\User;
+use App\Services\Assembly\LaravelProjectAssembler;
 use App\Services\Debugging\IterationValidator;
 use App\Services\Generation\LaravelArtifactGenerator;
 use App\Services\Iterations\IterationCloner;
@@ -194,5 +196,66 @@ class VisualBuilderTest extends TestCase
         $this->assertSame('passed', $passed->status);
         $this->assertNotEmpty($passed->checks);
         $this->assertDatabaseCount('build_runs', 2);
+    }
+
+    public function test_assembler_creates_and_verifies_a_runnable_project_without_overwriting(): void
+    {
+        Storage::fake('local');
+        $runner = new FakeProcessRunner;
+        $this->app->instance(ProcessRunner::class, $runner);
+
+        $user = User::factory()->create();
+        $outputPath = Storage::disk('local')->path('assembled/customer-portal');
+        mkdir(dirname($outputPath), recursive: true);
+        $project = $user->builderProjects()->create([
+            'name' => 'Customer Portal',
+            'slug' => 'customer-portal',
+            'database_driver' => 'sqlite',
+            'output_path' => $outputPath,
+        ]);
+        $iteration = $project->iterations()->create(['number' => 1, 'name' => 'Initial build']);
+        $model = $iteration->models()->create(['name' => 'Customer', 'table_name' => 'customers']);
+        $field = $model->fields()->create(['name' => 'name', 'label' => 'Name', 'type' => 'string']);
+        $page = $iteration->pages()->create([
+            'model_definition_id' => $model->id,
+            'name' => 'Customers',
+            'slug' => 'customers',
+            'page_type' => 'index',
+        ]);
+        $page->controls()->create(['model_field_id' => $field->id, 'control_type' => 'input', 'label' => 'Name']);
+        $iteration->plugins()->create(['package' => 'spatie/laravel-permission', 'constraint' => '^7.0', 'approved' => true]);
+
+        app(IterationValidator::class)->run($iteration);
+        app(LaravelArtifactGenerator::class)->generate($iteration);
+        $run = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
+
+        $this->assertSame('passed', $run->status);
+        $this->assertSame('assembled', $project->fresh()->status);
+        $this->assertFileExists($outputPath.DIRECTORY_SEPARATOR.'visual-builder.json');
+        $this->assertStringContainsString("require __DIR__.'/generated.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php'));
+        $this->assertContains(['composer', 'require', 'spatie/laravel-permission:^7.0'], $runner->commands);
+        $this->assertContains(['npm', 'run', 'build'], $runner->commands);
+
+        $second = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
+        $this->assertSame('failed', $second->status);
+        $this->assertStringContainsString('already exists', $second->output);
+    }
+}
+
+final class FakeProcessRunner implements ProcessRunner
+{
+    /** @var list<list<string>> */
+    public array $commands = [];
+
+    public function run(array $command, string $workingDirectory, int $timeout = 600): array
+    {
+        $this->commands[] = $command;
+        if ($command[0] === 'laravel') {
+            $outputPath = $workingDirectory.DIRECTORY_SEPARATOR.$command[2];
+            mkdir($outputPath.DIRECTORY_SEPARATOR.'routes', recursive: true);
+            file_put_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php', "<?php\n");
+        }
+
+        return ['successful' => true, 'output' => implode(' ', $command), 'exit_code' => 0];
     }
 }

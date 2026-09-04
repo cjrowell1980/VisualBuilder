@@ -30,6 +30,12 @@ class LaravelArtifactGenerator
         if ($iteration->pages->isNotEmpty()) {
             $files[] = $this->write($root, 'routes/generated.php', $this->routes($iteration));
         }
+        if ($iteration->project->docker_enabled) {
+            $files[] = $this->write($root, 'Dockerfile', $this->dockerfile());
+            $files[] = $this->write($root, 'compose.yaml', $this->compose($iteration));
+            $files[] = $this->write($root, 'docker/nginx.conf', $this->nginx());
+            $files[] = $this->write($root, 'docker/supervisord.conf', $this->supervisor());
+        }
 
         $manifest = [
             'project' => $iteration->project->only(['name', 'slug', 'template', 'database_driver', 'docker_enabled']),
@@ -177,5 +183,113 @@ use Illuminate\Support\Facades\Route;
 
 {$routes}
 PHP;
+    }
+
+    private function dockerfile(): string
+    {
+        return <<<'DOCKERFILE'
+FROM node:22-alpine AS assets
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY resources ./resources
+COPY vite.config.* ./
+RUN npm run build
+
+FROM composer:2 AS dependencies
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+
+FROM php:8.4-fpm-alpine
+RUN apk add --no-cache libpq-dev icu-dev nginx supervisor \
+    && docker-php-ext-install pdo_pgsql intl opcache
+WORKDIR /var/www/html
+COPY . .
+COPY --from=dependencies /app/vendor ./vendor
+COPY --from=assets /app/public/build ./public/build
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+COPY docker/supervisord.conf /etc/supervisord.conf
+RUN mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache
+EXPOSE 8080
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]
+DOCKERFILE;
+    }
+
+    private function compose(BuildIteration $iteration): string
+    {
+        $database = $iteration->project->slug;
+
+        return <<<YAML
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: \${APP_KEY}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: {$database}
+      DB_USERNAME: {$database}
+      DB_PASSWORD: local-development-only
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: {$database}
+      POSTGRES_USER: {$database}
+      POSTGRES_PASSWORD: local-development-only
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {$database} -d {$database}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres-data:
+YAML;
+    }
+
+    private function nginx(): string
+    {
+        return <<<'NGINX'
+server {
+    listen 8080;
+    server_name _;
+    root /var/www/html/public;
+    index index.php;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass 127.0.0.1:9000;
+    }
+}
+NGINX;
+    }
+
+    private function supervisor(): string
+    {
+        return <<<'SUPERVISOR'
+[supervisord]
+nodaemon=true
+logfile=/dev/null
+
+[program:php-fpm]
+command=php-fpm -F
+autorestart=true
+
+[program:nginx]
+command=nginx -g "daemon off;"
+autorestart=true
+SUPERVISOR;
     }
 }
