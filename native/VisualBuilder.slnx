@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VisualBuilder.App/VisualBuilder.App.csproj" />
+    <Project Path="src/VisualBuilder.Application/VisualBuilder.Application.csproj" />
+    <Project Path="src/VisualBuilder.Domain/VisualBuilder.Domain.csproj" />
+    <Project Path="src/VisualBuilder.Generation.Laravel/VisualBuilder.Generation.Laravel.csproj" />
+    <Project Path="src/VisualBuilder.Infrastructure/VisualBuilder.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VisualBuilder.Domain.Tests/VisualBuilder.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

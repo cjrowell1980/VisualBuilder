@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "VisualBuilder.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "VisualBuilder.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visualbuilder.dev/contracts/generator-manifest.schema.json",
+  "title": "VisualBuilder Generator Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifestVersion", "projectId", "iterationId", "generatorVersion", "generatedAt", "files"],
+  "properties": {
+    "manifestVersion": { "const": "1.0" },
+    "projectId": { "type": "string", "format": "uuid" },
+    "iterationId": { "type": "string", "format": "uuid" },
+    "generatorVersion": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "owner", "updatePolicy"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "owner": { "type": "string", "minLength": 1 },
+          "updatePolicy": { "enum": ["replace-if-unmodified", "merge", "append-only", "never-replace"] }
+        }
+      }
+    }
+  }
+}

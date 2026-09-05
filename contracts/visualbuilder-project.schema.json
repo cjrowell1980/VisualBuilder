@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visualbuilder.dev/contracts/visualbuilder-project.schema.json",
+  "title": "VisualBuilder Project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "project", "iterations"],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "project": { "$ref": "#/$defs/project" },
+    "iterations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/iteration" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "slug", "applicationType", "starterKit", "database", "dockerEnabled"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "description": { "type": "string", "maxLength": 1000 },
+        "applicationType": { "enum": ["web", "api", "web-api"] },
+        "starterKit": { "enum": ["livewire", "blank", "api"] },
+        "database": { "enum": ["postgresql", "mysql", "sqlite"] },
+        "dockerEnabled": { "type": "boolean" },
+        "outputPath": { "type": ["string", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "iteration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "number", "name", "status", "models", "pages", "functions", "plugins"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "parentIterationId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "number": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "status": { "enum": ["draft", "validated", "generated", "assembled", "published"] },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/model" } },
+        "pages": { "type": "array", "items": { "$ref": "#/$defs/page" } },
+        "functions": { "type": "array", "items": { "$ref": "#/$defs/functionGraph" } },
+        "plugins": { "type": "array", "items": { "$ref": "#/$defs/plugin" } }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "tableName", "timestamps", "softDeletes", "fields", "relationships"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+        "tableName": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "timestamps": { "type": "boolean" },
+        "softDeletes": { "type": "boolean" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+        "relationships": { "type": "array", "items": { "$ref": "#/$defs/relationship" } }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "label", "type", "nullable", "indexed", "unique", "validationRules", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "type": { "enum": ["string", "text", "integer", "decimal", "boolean", "date", "datetime", "json"] },
+        "nullable": { "type": "boolean" },
+        "indexed": { "type": "boolean" },
+        "unique": { "type": "boolean" },
+        "defaultValue": {},
+        "validationRules": { "type": "array", "items": { "type": "string" } },
+        "position": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "targetModelId"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["belongs-to", "has-one", "has-many", "belongs-to-many"] },
+        "targetModelId": { "$ref": "#/$defs/id" },
+        "foreignKey": { "type": ["string", "null"] },
+        "pivotTable": { "type": ["string", "null"] }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "slug", "type", "layout", "controls", "eventBindings", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "modelId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "type": { "enum": ["dashboard", "index", "create", "edit", "show", "custom"] },
+        "layout": { "enum": ["app", "full-width", "guest"] },
+        "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } },
+        "eventBindings": { "type": "array", "items": { "$ref": "#/$defs/eventBinding" } },
+        "position": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "label", "width", "position", "configuration"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "fieldId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "type": { "enum": ["heading", "text", "input", "textarea", "select", "checkbox", "date", "button", "table", "card"] },
+        "label": { "type": "string", "minLength": 1 },
+        "width": { "enum": ["full", "half", "third", "quarter"] },
+        "position": { "type": "integer", "minimum": 0 },
+        "configuration": { "type": "object" }
+      }
+    },
+    "eventBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "functionId"],
+      "properties": {
+        "controlId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "event": { "enum": ["page-loaded", "submitted", "clicked", "changed"] },
+        "functionId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "functionGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "scope", "nodes", "edges"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "scope": { "enum": ["page", "project"] },
+        "pageId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/functionNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/functionEdge" } }
+      }
+    },
+    "functionNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "version", "position", "configuration"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": {
+          "enum": [
+            "event", "validate", "authorize", "query", "create-record", "update-record",
+            "delete-record", "condition", "loop", "set-value", "notify", "navigate",
+            "open-modal", "close-modal", "dispatch-job", "send-email", "http-request",
+            "call-function", "return", "custom-code"
+          ]
+        },
+        "version": { "type": "integer", "minimum": 1 },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+        },
+        "configuration": { "type": "object" }
+      }
+    },
+    "functionEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sourceNodeId", "sourcePort", "targetNodeId", "targetPort"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sourceNodeId": { "$ref": "#/$defs/id" },
+        "sourcePort": { "type": "string", "minLength": 1 },
+        "targetNodeId": { "$ref": "#/$defs/id" },
+        "targetPort": { "type": "string", "minLength": 1 }
+      }
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ecosystem", "package", "constraint", "approved"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "ecosystem": { "enum": ["composer", "npm"] },
+        "package": { "type": "string", "minLength": 1 },
+        "constraint": { "type": "string", "minLength": 1 },
+        "approved": { "type": "boolean" }
+      }
+    }
+  }
+}

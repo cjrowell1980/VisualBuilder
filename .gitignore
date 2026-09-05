@@ -24,3 +24,6 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/native/**/bin
+/native/**/obj
+*.user

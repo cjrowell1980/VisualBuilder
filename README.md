@@ -70,3 +70,16 @@ Add GitHub Actions secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY` for CI. 
 8. Package either the review bundle or complete application, or commit and push it to a private-by-default GitHub repository.
 
 See [Build phases](docs/BUILD_PHASES.md) for the current verification and release boundaries.
+
+## Native Windows rewrite
+
+The next-generation Windows application is being developed side-by-side in `native/`. It uses .NET 10 and WinUI 3 while retaining Laravel, Livewire, Flux and Tailwind as generated application targets. The current Laravel/NativePHP application remains available during feature-parity migration.
+
+Build and test the native foundation with:
+
+```powershell
+dotnet build native\VisualBuilder.slnx
+dotnet test native\tests\VisualBuilder.Domain.Tests\VisualBuilder.Domain.Tests.csproj
+```
+
+The versioned project and generator contracts are in `contracts/`. See [Native migration](docs/NATIVE_MIGRATION.md) for architectural decisions, migration boundaries and the parity plan.
