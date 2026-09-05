@@ -61,6 +61,10 @@ public sealed class ModelDesignerTests
         var order = designer.AddModel(new("Order", "orders", true, false));
         designer.AddRelationship(order.Id, new("customer", "belongs-to", customer.Id, "customer_id", null));
 
+        var incoming = designer.GetIncomingReferences(customer.Id);
+        Assert.Single(incoming);
+        Assert.Equal("Order", incoming[0].SourceModelName);
+        Assert.Equal("customer", incoming[0].RelationshipName);
         Assert.Throws<ModelDesignException>(() => designer.RemoveModel(customer.Id));
     }
 
@@ -76,6 +80,19 @@ public sealed class ModelDesignerTests
         await workspace.SaveAsync();
 
         Assert.Single(documentStore.Document!.Iterations[0].Models);
+        Assert.False(workspace.IsDirty);
+    }
+
+    [Fact]
+    public async Task Closing_the_workspace_clears_the_document_and_dirty_state()
+    {
+        var workspace = await Workspace();
+        new ModelDesigner(workspace).AddModel(new("Order", "orders", true, false));
+
+        workspace.Close();
+
+        Assert.Null(workspace.Current);
+        Assert.Null(workspace.CurrentPath);
         Assert.False(workspace.IsDirty);
     }
 

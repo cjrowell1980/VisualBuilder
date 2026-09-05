@@ -37,6 +37,13 @@ public sealed class ProjectWorkspace(IProjectDocumentStore documents, IRecentPro
         IsDirty = true;
     }
 
+    public void Close()
+    {
+        Current = null;
+        CurrentPath = null;
+        IsDirty = false;
+    }
+
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         if (Current is null || string.IsNullOrWhiteSpace(CurrentPath)) return;

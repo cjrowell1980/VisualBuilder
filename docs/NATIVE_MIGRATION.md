@@ -72,6 +72,9 @@ Page, model and function editing will use the same workspace dirty-state and per
 - Enforce contract-compatible PascalCase and snake_case names, uniqueness and reserved-field rules before persistence.
 - Prevent model deletion while another relationship still targets it.
 - Persist every model change through the shared dirty-document and autosave pipeline.
+- Refresh the model explorer immediately after edits and show incoming references on the target model.
+- Provide File menu actions for save-aware project closing and application exit.
+- Warn that removing a relationship also removes the target model's referential deletion protection.
 
 ## Repository transition
 

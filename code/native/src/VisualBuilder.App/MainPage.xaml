@@ -4,10 +4,20 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d">
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <CommandBar Grid.Row="0" DefaultLabelPosition="Right" Padding="8,4">
-            <AppBarButton Icon="Add" Label="New project" Click="NewProject_Click" /><AppBarButton Icon="OpenFile" Label="Open" Click="OpenProject_Click" /><AppBarSeparator />
-            <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save" Click="SaveProject_Click" IsEnabled="False" /><AppBarButton Icon="Play" Label="Run" IsEnabled="False" /><AppBarButton Icon="Upload" Label="Package" IsEnabled="False" />
-        </CommandBar>
+        <StackPanel Grid.Row="0">
+            <MenuBar>
+                <MenuBarItem Title="File">
+                    <MenuFlyoutItem Text="New project" Click="NewProject_Click" KeyboardAcceleratorTextOverride="Ctrl+N" />
+                    <MenuFlyoutItem Text="Open project" Click="OpenProject_Click" KeyboardAcceleratorTextOverride="Ctrl+O" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem x:Name="FileSaveItem" Text="Save" Click="SaveProject_Click" IsEnabled="False" KeyboardAcceleratorTextOverride="Ctrl+S" />
+                    <MenuFlyoutItem x:Name="FileCloseItem" Text="Close project" Click="CloseProject_Click" IsEnabled="False" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit VisualBuilder" Click="ExitApplication_Click" />
+                </MenuBarItem>
+            </MenuBar>
+            <CommandBar DefaultLabelPosition="Right" Padding="8,4"><AppBarButton Icon="Add" Label="New project" Click="NewProject_Click" /><AppBarButton Icon="OpenFile" Label="Open" Click="OpenProject_Click" /><AppBarSeparator /><AppBarButton x:Name="SaveButton" Icon="Save" Label="Save" Click="SaveProject_Click" IsEnabled="False" /><AppBarButton Icon="Play" Label="Run" IsEnabled="False" /><AppBarButton Icon="Upload" Label="Package" IsEnabled="False" /></CommandBar>
+        </StackPanel>
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions><ColumnDefinition Width="270" /><ColumnDefinition Width="*" /><ColumnDefinition Width="310" /></Grid.ColumnDefinitions>
             <Border Grid.Column="0" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,1,0" Padding="16">
@@ -35,7 +45,7 @@
                 </Grid>
             </Grid>
             <Border Grid.Column="2" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0" Padding="16">
-                <StackPanel Spacing="14"><TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Model properties" /><TextBlock x:Name="ModelOptionsText" Text="Select a model" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" /><Grid><TextBlock Text="Relationships" FontWeight="SemiBold" /><Button x:Name="AddRelationshipButton" HorizontalAlignment="Right" Content="+ Add" Click="AddRelationship_Click" IsEnabled="False" /></Grid><ListView x:Name="RelationshipsList" SelectionChanged="RelationshipsList_SelectionChanged"><ListView.ItemTemplate><DataTemplate><StackPanel Padding="5"><TextBlock Text="{Binding Relationship.Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel></DataTemplate></ListView.ItemTemplate></ListView><Button x:Name="DeleteRelationshipButton" Content="Delete selected relationship" Click="DeleteRelationship_Click" IsEnabled="False" /></StackPanel>
+                <StackPanel Spacing="14"><TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Model properties" /><TextBlock x:Name="ModelOptionsText" Text="Select a model" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" /><Grid><TextBlock Text="Relationships" FontWeight="SemiBold" /><Button x:Name="AddRelationshipButton" HorizontalAlignment="Right" Content="+ Add" Click="AddRelationship_Click" IsEnabled="False" /></Grid><ListView x:Name="RelationshipsList" MaxHeight="180" SelectionChanged="RelationshipsList_SelectionChanged"><ListView.ItemTemplate><DataTemplate><StackPanel Padding="5"><TextBlock Text="{Binding Relationship.Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel></DataTemplate></ListView.ItemTemplate></ListView><Button x:Name="DeleteRelationshipButton" Content="Delete selected relationship" Click="DeleteRelationship_Click" IsEnabled="False" /><Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" /><TextBlock Text="Referenced by" FontWeight="SemiBold" /><TextBlock x:Name="NoInboundReferencesText" Text="No other models reference this model." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /><ListView x:Name="InboundRelationshipsList" MaxHeight="180"><ListView.ItemTemplate><DataTemplate><StackPanel Padding="5"><TextBlock Text="{Binding SourceModel}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel></DataTemplate></ListView.ItemTemplate></ListView></StackPanel>
             </Border>
         </Grid>
         <Border Grid.Row="2" Padding="12,7" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"><Grid><TextBlock x:Name="StatusText" Text="Ready" /><TextBlock HorizontalAlignment="Right" Text="Autosave: on • Project format 1.0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></Grid></Border>

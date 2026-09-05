@@ -80,6 +80,13 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
         Relationships = model.Relationships.Where(item => item.Id != relationshipId).ToArray()
     });
 
+    public IReadOnlyList<IncomingModelReference> GetIncomingReferences(Guid targetModelId) => RequireDocument().Iterations[^1].Models
+        .SelectMany(source => source.Relationships
+            .Where(relationship => relationship.TargetModelId == targetModelId)
+            .Select(relationship => new IncomingModelReference(source.Id, source.Name, relationship.Id,
+                relationship.Name, relationship.Type)))
+        .ToArray();
+
     private ProjectDocument RequireDocument() => workspace.Current ?? throw new InvalidOperationException("Open a project first.");
     private ModelDefinition FindModel(Guid id) => RequireDocument().Iterations[^1].Models.FirstOrDefault(model => model.Id == id)
         ?? throw new ModelDesignException("The selected model no longer exists.");
@@ -138,4 +145,6 @@ public sealed record ModelInput(string Name, string TableName, bool Timestamps, 
 public sealed record FieldInput(string Name, string Label, string Type, bool Nullable, bool Indexed, bool Unique,
     string? DefaultValue, IReadOnlyList<string> ValidationRules);
 public sealed record RelationshipInput(string Name, string Type, Guid TargetModelId, string? ForeignKey, string? PivotTable);
+public sealed record IncomingModelReference(Guid SourceModelId, string SourceModelName, Guid RelationshipId,
+    string RelationshipName, string RelationshipType);
 public sealed class ModelDesignException(string message) : Exception(message);

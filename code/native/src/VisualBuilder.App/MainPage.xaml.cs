@@ -56,6 +56,7 @@ public sealed partial class MainPage : Page
         InitializePicker(picker);
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
+        if (!await CanReplaceCurrentProjectAsync()) return;
 
         try
         {
@@ -77,12 +78,12 @@ public sealed partial class MainPage : Page
         picker.FileTypeFilter.Add(".vbproject");
         InitializePicker(picker);
         var file = await picker.PickSingleFileAsync();
-        if (file is not null) await OpenProjectAsync(file.Path);
+        if (file is not null && await CanReplaceCurrentProjectAsync()) await OpenProjectAsync(file.Path);
     }
 
     private async void RecentProjects_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is RecentProject recent) await OpenProjectAsync(recent.Path);
+        if (e.ClickedItem is RecentProject recent && await CanReplaceCurrentProjectAsync()) await OpenProjectAsync(recent.Path);
     }
 
     private async void SaveProject_Click(object sender, RoutedEventArgs e)
@@ -116,10 +117,14 @@ public sealed partial class MainPage : Page
         EmptyState.Visibility = Visibility.Collapsed;
         ProjectState.Visibility = Visibility.Visible;
         SaveButton.IsEnabled = true;
+        FileSaveItem.IsEnabled = true;
+        FileCloseItem.IsEnabled = true;
         AddModelButton.IsEnabled = true;
         StatusText.Text = "Project ready";
         App.MainWindow.Title = $"{project.Name} — VisualBuilder";
+        _selectedModel = null;
         RefreshModels();
+        if (CurrentModels().FirstOrDefault() is { } firstModel) SelectModel(firstModel);
         await RefreshRecentProjectsAsync();
     }
 
@@ -204,8 +209,10 @@ public sealed partial class MainPage : Page
 
     private async void DeleteRelationship_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedModel is null || RelationshipsList.SelectedItem is not RelationshipListItem item ||
-            !await ConfirmAsync("Delete relationship?", $"Delete the {item.Relationship.Name} relationship?")) return;
+        if (_selectedModel is null || RelationshipsList.SelectedItem is not RelationshipListItem item) return;
+        var targetName = CurrentModels().FirstOrDefault(model => model.Id == item.Relationship.TargetModelId)?.Name ?? "target model";
+        if (!await ConfirmAsync("Delete relationship?",
+            $"Delete {_selectedModel.Name}.{item.Relationship.Name} → {targetName}? This removes the reference and allows {targetName} to be deleted if it has no other incoming references.")) return;
         await ApplyModelChangeAsync(() => App.Models.RemoveRelationship(_selectedModel.Id, item.Relationship.Id));
     }
 
@@ -217,8 +224,10 @@ public sealed partial class MainPage : Page
         try
         {
             change();
-            if (_selectedModel is not null) SelectModel(CurrentModels().Single(model => model.Id == _selectedModel.Id));
-            else RefreshModels();
+            var selectedId = _selectedModel?.Id;
+            RefreshModels();
+            if (selectedId is not null && CurrentModels().FirstOrDefault(model => model.Id == selectedId) is { } selected)
+                SelectModel(selected);
             StatusText.Text = "Unsaved changes — autosave pending";
         }
         catch (ModelDesignException exception)
@@ -255,6 +264,11 @@ public sealed partial class MainPage : Page
         RelationshipsList.ItemsSource = null;
         RelationshipsList.ItemsSource = model.Relationships.Select(relationship => new RelationshipListItem(relationship,
             $"{relationship.Type} → {CurrentModels().FirstOrDefault(target => target.Id == relationship.TargetModelId)?.Name ?? "Missing model"}")).ToArray();
+        var incoming = App.Models.GetIncomingReferences(model.Id).Select(reference =>
+            new InboundRelationshipListItem(reference.SourceModelName,
+                $"{reference.RelationshipName} ({reference.RelationshipType}) → {model.Name}")).ToArray();
+        InboundRelationshipsList.ItemsSource = incoming;
+        NoInboundReferencesText.Visibility = incoming.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         AddRelationshipButton.IsEnabled = true;
         EditFieldButton.IsEnabled = false;
         DeleteFieldButton.IsEnabled = false;
@@ -324,6 +338,61 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private async void CloseProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (!await CanReplaceCurrentProjectAsync()) return;
+        ResetWorkspaceView();
+    }
+
+    private async void ExitApplication_Click(object sender, RoutedEventArgs e)
+    {
+        if (await CanReplaceCurrentProjectAsync()) App.MainWindow.Close();
+    }
+
+    private async Task<bool> CanReplaceCurrentProjectAsync()
+    {
+        if (App.Workspace.Current is null) return true;
+        if (App.Workspace.IsDirty)
+        {
+            var result = await new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Save changes?",
+                Content = $"Save changes to {App.Workspace.Current.Project.Name} before closing it?",
+                PrimaryButtonText = "Save",
+                SecondaryButtonText = "Don't save",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary
+            }.ShowAsync();
+            if (result == ContentDialogResult.None) return false;
+            if (result == ContentDialogResult.Primary)
+            {
+                try { await App.Workspace.SaveAsync(); }
+                catch (Exception exception) { await ShowErrorAsync("Project could not be saved", exception.Message); return false; }
+            }
+        }
+
+        App.Workspace.Close();
+        return true;
+    }
+
+    private void ResetWorkspaceView()
+    {
+        _selectedModel = null;
+        ModelsList.ItemsSource = null;
+        FieldsList.ItemsSource = null;
+        RelationshipsList.ItemsSource = null;
+        InboundRelationshipsList.ItemsSource = null;
+        ProjectState.Visibility = Visibility.Collapsed;
+        EmptyState.Visibility = Visibility.Visible;
+        SaveButton.IsEnabled = false;
+        FileSaveItem.IsEnabled = false;
+        FileCloseItem.IsEnabled = false;
+        AddModelButton.IsEnabled = false;
+        StatusText.Text = "Project closed";
+        App.MainWindow.Title = "VisualBuilder";
+    }
+
     private async Task RefreshRecentProjectsAsync() => RecentProjectsList.ItemsSource = await App.RecentProjects.LoadAsync();
 
     private async Task ShowErrorAsync(string title, string message) => await new ContentDialog
@@ -343,4 +412,5 @@ public sealed partial class MainPage : Page
         picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 
     private sealed record RelationshipListItem(RelationshipDefinition Relationship, string Summary);
+    private sealed record InboundRelationshipListItem(string SourceModel, string Summary);
 }
