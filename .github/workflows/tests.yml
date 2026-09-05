@@ -12,6 +12,9 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: database/database.sqlite
 
     steps:
       - name: Checkout code
@@ -38,7 +41,9 @@ jobs:
           FLUX_LICENSE_KEY: ${{ secrets.FLUX_LICENSE_KEY }}
 
       - name: Setup Application
-        run: composer setup
+        run: |
+          touch database/database.sqlite
+          composer setup
 
       - name: Run CI Checks
         run: composer ci:check

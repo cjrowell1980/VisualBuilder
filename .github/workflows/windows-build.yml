@@ -11,6 +11,8 @@ jobs:
     runs-on: windows-latest
     env:
       NATIVEPHP_APP_VERSION: 1.0.${{ github.run_number }}
+      DB_CONNECTION: sqlite
+      DB_DATABASE: database/database.sqlite
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
