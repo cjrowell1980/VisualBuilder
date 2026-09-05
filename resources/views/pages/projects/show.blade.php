@@ -4,6 +4,7 @@ use App\Models\BuilderProject;
 use App\Models\BuildIteration;
 use App\Models\ModelField;
 use App\Services\Assembly\LaravelProjectAssembler;
+use App\Services\Assembly\LaravelProjectUpdater;
 use App\Services\Debugging\IterationValidator;
 use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
@@ -520,6 +521,12 @@ new class extends Component
         $this->assemblyMessage = $run->checks[0]['message'] ?? $run->output;
     }
 
+    public function updateProject(LaravelProjectUpdater $updater): void
+    {
+        $run = $updater->update($this->iteration());
+        $this->assemblyMessage = $run->checks[0]['message'] ?? $run->output;
+    }
+
     public function startPreview(PreviewServerManager $preview): void
     {
         $run = $preview->start($this->iteration());
@@ -677,7 +684,7 @@ new class extends Component
             'iteration' => $iteration,
             'iterations' => $this->project->iterations()->latest('number')->get(),
             'validationRun' => $iteration->runs->firstWhere('type', 'validation'),
-            'assemblyRun' => $iteration->runs->firstWhere('type', 'assembly'),
+            'assemblyRun' => $iteration->runs->first(fn ($run) => in_array($run->type, ['assembly', 'update'], true)),
             'previewRun' => $iteration->runs->firstWhere('type', 'preview'),
             'githubRun' => $iteration->runs->firstWhere('type', 'github'),
         ];
@@ -810,7 +817,7 @@ new class extends Component
     @else
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
             <div class="space-y-6">
-                <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Build runnable application</flux:heading><flux:text class="mt-2">Create a clean Laravel application at <code>{{ $project->output_path ?: 'an output folder selected in project setup' }}</code>, apply this iteration, install approved packages, build assets, migrate, and run its tests.</flux:text>@if($assemblyMessage)<flux:callout class="mt-6" :variant="$assemblyRun?->status === 'passed' ? 'success' : 'danger'" :icon="$assemblyRun?->status === 'passed' ? 'check-circle' : 'x-circle'" heading="Project assembly"><flux:callout.text>{{ $assemblyMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="assembleProject" wire:confirm="Create the application in the configured output folder? Existing folders are never overwritten." class="mt-6" variant="primary" icon="wrench-screwdriver" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated' || !$project->output_path">Build and test application</flux:button></div>
+                <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Build runnable application</flux:heading><flux:text class="mt-2">Create a clean Laravel application or safely apply this iteration to the existing generated project. Updates create a backup, stop on manual-file conflicts, and roll files back if tests fail.</flux:text>@if($assemblyMessage)<flux:callout class="mt-6" :variant="in_array($assemblyRun?->status, ['passed'], true) ? 'success' : 'danger'" :icon="$assemblyRun?->status === 'passed' ? 'check-circle' : 'x-circle'" heading="Project build"><flux:callout.text>{{ $assemblyMessage }}</flux:callout.text></flux:callout>@endif<div class="mt-6 flex flex-wrap gap-2"><flux:button wire:click="assembleProject" wire:confirm="Create the application in the configured output folder? Existing folders are never overwritten." variant="primary" icon="wrench-screwdriver" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated' || !$project->output_path || in_array($project->status, ['assembled', 'published'], true)">Build new application</flux:button><flux:button wire:click="updateProject" wire:confirm="Back up and update the existing generated application? Manual changes to generated files will stop the update." icon="arrow-path" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated' || !in_array($project->status, ['assembled', 'published'], true)">Update existing application</flux:button></div><flux:text class="mt-3 text-sm">Schema-changing iterations currently require a new application build so database changes are never guessed or applied destructively.</flux:text></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Package project</flux:heading><flux:text class="mt-2">Create an immutable design-review ZIP or package the complete tested Laravel application. Application packages omit <code>.env</code>, Git metadata, and <code>node_modules</code>.</flux:text>@if($packagePath)<flux:callout class="mt-6" variant="success" icon="archive-box" heading="Review ZIP ready"><flux:callout.text>{{ $packagePath }}</flux:callout.text></flux:callout>@endif @if($applicationPackagePath)<flux:callout class="mt-3" variant="success" icon="archive-box" heading="Application ZIP ready"><flux:callout.text>{{ $applicationPackagePath }}</flux:callout.text></flux:callout>@endif<div class="mt-6 flex flex-wrap gap-2"><flux:button wire:click="packageIteration" icon="archive-box" :disabled="$validationRun?->status !== 'passed' || $iteration->status !== 'generated'">Package review bundle</flux:button><flux:button wire:click="packageApplication" variant="primary" icon="archive-box" :disabled="$assemblyRun?->status !== 'passed'">Package complete application</flux:button></div></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900"><flux:heading size="lg">Publish to GitHub</flux:heading><flux:text class="mt-2">Commit the assembled application and push it using your authenticated GitHub CLI. New repositories are private by default.</flux:text><flux:input wire:model="githubRepository" class="mt-5" label="Repository" placeholder="owner/project-name" />@if($githubMessage)<flux:callout class="mt-5" :variant="$githubRun?->status === 'passed' ? 'success' : 'danger'" heading="GitHub delivery"><flux:callout.text>{{ $githubMessage }}</flux:callout.text></flux:callout>@endif<flux:button wire:click="publishToGitHub" wire:confirm="Commit and push this assembled application to GitHub?" class="mt-5" icon="cloud-arrow-up" :disabled="$assemblyRun?->status !== 'passed'">Commit and push</flux:button></div>
                 <div class="rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-700 dark:bg-zinc-900">

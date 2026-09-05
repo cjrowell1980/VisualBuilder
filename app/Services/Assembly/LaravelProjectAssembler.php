@@ -16,6 +16,7 @@ class LaravelProjectAssembler
     public function __construct(
         private readonly ProcessRunner $runner,
         private readonly Filesystem $files,
+        private readonly GeneratedProjectManifest $manifest,
     ) {}
 
     public function assemble(BuildIteration $iteration): BuildRun
@@ -58,6 +59,7 @@ class LaravelProjectAssembler
             }
             $this->files->copyDirectory($source, $outputPath);
             $this->wireGeneratedRoutes($outputPath);
+            $this->manifest->write($source, $outputPath, $iteration->number);
 
             $commands = [];
             foreach ($iteration->plugins->where('approved', true)->where('type', 'composer') as $plugin) {

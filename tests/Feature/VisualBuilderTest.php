@@ -6,6 +6,7 @@ use App\Contracts\ProcessRunner;
 use App\Models\BuilderProject;
 use App\Models\User;
 use App\Services\Assembly\LaravelProjectAssembler;
+use App\Services\Assembly\LaravelProjectUpdater;
 use App\Services\Debugging\IterationValidator;
 use App\Services\Debugging\PreviewServerManager;
 use App\Services\Generation\LaravelArtifactGenerator;
@@ -571,6 +572,7 @@ class VisualBuilderTest extends TestCase
         $this->assertSame('passed', $run->status);
         $this->assertSame('assembled', $project->fresh()->status);
         $this->assertFileExists($outputPath.DIRECTORY_SEPARATOR.'visual-builder.json');
+        $this->assertFileExists($outputPath.DIRECTORY_SEPARATOR.'.visual-builder'.DIRECTORY_SEPARATOR.'generated-manifest.json');
         $this->assertStringContainsString("require __DIR__.'/generated.php';", file_get_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'web.php'));
         $this->assertContains(['composer', 'require', 'spatie/laravel-permission:^7.0'], $runner->commands);
         $this->assertContains(['npm', 'install', 'sortablejs@^1.15'], $runner->commands);
@@ -589,6 +591,15 @@ class VisualBuilderTest extends TestCase
         $this->assertFalse($archive->locateName('node_modules/temporary.js'));
         $this->assertNotFalse($archive->locateName('artisan'));
         $archive->close();
+
+        $update = app(LaravelProjectUpdater::class)->update($iteration->fresh());
+        $this->assertSame('passed', $update->status);
+        $this->assertStringContainsString('updated and tested', $update->checks[0]['message']);
+
+        file_put_contents($outputPath.DIRECTORY_SEPARATOR.'routes'.DIRECTORY_SEPARATOR.'generated.php', "<?php\n// Manual edit\n");
+        $conflicted = app(LaravelProjectUpdater::class)->update($iteration->fresh());
+        $this->assertSame('failed', $conflicted->status);
+        $this->assertStringContainsString('manual changes', $conflicted->output);
 
         $second = app(LaravelProjectAssembler::class)->assemble($iteration->fresh());
         $this->assertSame('failed', $second->status);
