@@ -1,21 +1,40 @@
-# Visual Builder
+# VisualBuilder
 
-VisualBuilder is a Windows-first visual IDE that turns a versioned application design into a tested Laravel project. It combines schema and page design, Livewire/Flux code generation, managed preview processes, Docker environments, ZIP packaging, and GitHub delivery in one desktop workflow.
+VisualBuilder is a Windows-first visual IDE that turns a versioned application design into a tested Laravel project. The new native Windows application is the active implementation; the earlier Laravel/NativePHP application remains available during feature-parity migration.
 
-## Stack
+## Repository layout
 
-- Laravel 13, PHP 8.4, Fortify
-- Livewire 4 single-file components (the modern successor to Volt's class-based SFC format)
-- Flux UI and Flux Pro 2.18
-- Blade, Alpine, Tailwind CSS 4
-- PostgreSQL 17 and Docker
-- PHPUnit, Larastan, Pint, GitHub Actions, GHCR publishing
+```text
+VisualBuilder/
+├── code/
+│   ├── native/           # Active .NET 10 and WinUI 3 application
+│   └── legacy-laravel/   # Existing Laravel and NativePHP application
+├── builds/               # Local installers and generated build artifacts (ignored)
+├── contracts/            # Portable .vbproject and generator JSON schemas
+├── docs/                 # Architecture, migration and build documentation
+└── .github/              # CI, Windows build and release workflows
+```
 
-## Local setup
+## Native Windows application
 
-```bash
+The active application uses .NET 10 and WinUI 3 while retaining Laravel, Livewire, Flux, Blade and Tailwind as generated application targets.
+
+```powershell
+dotnet build code\native\VisualBuilder.slnx
+dotnet test code\native\tests\VisualBuilder.Domain.Tests\VisualBuilder.Domain.Tests.csproj
+dotnet run --project code\native\src\VisualBuilder.App\VisualBuilder.App.csproj
+```
+
+The project supports creating, saving and reopening versioned `.vbproject` files. See [Native migration](docs/NATIVE_MIGRATION.md) for the architectural decisions and parity plan.
+
+## Legacy Laravel application
+
+The working Laravel/NativePHP version is preserved under `code/legacy-laravel` until the native application reaches feature parity.
+
+```powershell
+cd code\legacy-laravel
 composer install
-cp .env.example .env
+Copy-Item .env.example .env
 php artisan key:generate
 php artisan migrate
 npm install
@@ -23,63 +42,42 @@ npm run build
 composer dev
 ```
 
-For a quick SQLite setup, set `DB_CONNECTION=sqlite`, clear the other database settings, create `database/database.sqlite`, then migrate.
+For SQLite, set `DB_CONNECTION=sqlite`, clear the other database settings, create `database/database.sqlite`, and run the migrations.
 
-## Docker
+### Docker
 
-Set `APP_KEY` in your environment, then run:
+From `code/legacy-laravel`:
 
-```bash
+```powershell
 docker compose up --build -d
 docker compose exec app php artisan migrate --force
 ```
 
-The application is available at `http://localhost:8080`. PostgreSQL data is stored in the named `postgres-data` volume.
+The application is available at `http://localhost:8080`. PostgreSQL data is stored in the `postgres-data` volume.
 
-## Windows desktop
+### NativePHP desktop build
 
-VisualBuilder uses NativePHP Desktop 2. Run the Windows development application with:
+From `code/legacy-laravel`, run `composer native:dev` for development or `php artisan native:build win` for an unsigned internal-test installer. Public releases require source-bundle protection and Windows code signing.
 
-```bash
-composer native:dev
-```
+### Flux Pro
 
-Create an unsigned internal-test installer with `php artisan native:build win`. Public releases must use source-bundle protection and Windows code signing before distribution.
+Authenticate from `code/legacy-laravel` using credentials from your Flux account:
 
-The manually triggered **Build Windows application** GitHub Actions workflow produces a 14-day internal-test artifact. It intentionally does not publish a public release: configure NativePHP Bifrost source protection and Windows code signing before enabling public release automation.
-
-## Flux Pro
-
-Flux Pro is installed as a private Composer package. Authenticate locally with the credentials from your Flux account; `auth.json` is ignored and used as a Docker BuildKit secret:
-
-```bash
+```powershell
 composer config http-basic.composer.fluxui.dev YOUR_EMAIL YOUR_LICENSE_KEY
 ```
 
-Add GitHub Actions secrets named `FLUX_USERNAME` and `FLUX_LICENSE_KEY` for CI. Also add a `COMPOSER_AUTH` secret containing the Composer authentication JSON for container publishing. Never commit any of these values.
+`auth.json` remains ignored. GitHub Actions uses `FLUX_USERNAME`, `FLUX_LICENSE_KEY`, and `COMPOSER_AUTH` repository secrets; never commit those values.
 
 ## Delivery model
 
 1. Create a web, API, or combined project and choose its database, Docker option, and output folder.
-2. Design models, typed fields, relationships, pages, controls, select options, and layout widths.
-3. Clone the current design into a new iteration before making a new version.
-4. Validate the current design. Any subsequent edit invalidates the validation and generated bundle.
-5. Generate models, migrations, pivot tables, Livewire pages, authenticated API controllers, routes, Docker files, and CI workflows.
-6. Assemble a clean Laravel project, install explicitly approved Composer/npm packages, compile assets, migrate, and run its tests.
-7. Launch and stop the assembled application through NativePHP's managed preview process.
-8. Package either the review bundle or complete application, or commit and push it to a private-by-default GitHub repository.
+2. Design models, typed fields, relationships, pages, controls and block-based functions.
+3. Clone designs into versioned iterations.
+4. Validate before generation; later edits invalidate the generated bundle.
+5. Generate Laravel, Livewire/Flux, API, Docker and CI code.
+6. Assemble, install approved dependencies, build, migrate and test.
+7. Launch the debugger and managed preview.
+8. Package to ZIP, Git, GitHub or a Windows installer.
 
-See [Build phases](docs/BUILD_PHASES.md) for the current verification and release boundaries.
-
-## Native Windows rewrite
-
-The next-generation Windows application is being developed side-by-side in `native/`. It uses .NET 10 and WinUI 3 while retaining Laravel, Livewire, Flux and Tailwind as generated application targets. The current Laravel/NativePHP application remains available during feature-parity migration.
-
-Build and test the native foundation with:
-
-```powershell
-dotnet build native\VisualBuilder.slnx
-dotnet test native\tests\VisualBuilder.Domain.Tests\VisualBuilder.Domain.Tests.csproj
-```
-
-The versioned project and generator contracts are in `contracts/`. See [Native migration](docs/NATIVE_MIGRATION.md) for architectural decisions, migration boundaries and the parity plan.
+See [Build phases](docs/BUILD_PHASES.md) for verification and release boundaries.

@@ -12,6 +12,9 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: code/legacy-laravel
     env:
       DB_CONNECTION: sqlite
       DB_DATABASE: database/database.sqlite
@@ -33,6 +36,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: code/legacy-laravel/package-lock.json
 
       - name: Configure Flux Pro authentication
         run: composer config --global http-basic.composer.fluxui.dev "$FLUX_USERNAME" "$FLUX_LICENSE_KEY"

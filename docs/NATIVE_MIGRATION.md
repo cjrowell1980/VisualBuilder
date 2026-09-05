@@ -66,4 +66,4 @@ Page, model and function editing will use the same workspace dirty-state and per
 
 ## Repository transition
 
-The new solution will live under `native/` during migration. The Laravel application remains at the repository root. It will not be moved into a legacy directory until the native build has a working importer and passes the agreed parity gates.
+The native solution lives under `code/native/`. The previous Laravel/NativePHP implementation is preserved intact under `code/legacy-laravel/` until the native build has a working importer and passes the agreed parity gates. Local installers and generated artifacts belong in the ignored `builds/` directory.

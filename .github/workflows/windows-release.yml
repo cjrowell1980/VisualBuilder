@@ -11,6 +11,9 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: code/legacy-laravel
     env:
       DB_CONNECTION: sqlite
       DB_DATABASE: database/database.sqlite
@@ -48,6 +51,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: code/legacy-laravel/package-lock.json
 
       - name: Configure Flux Pro authentication
         shell: pwsh
@@ -88,4 +92,3 @@ jobs:
 
       - name: Publish release
         run: gh release edit '${{ github.ref_name }}' --draft=false --latest
-
