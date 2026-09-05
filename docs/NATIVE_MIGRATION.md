@@ -64,6 +64,15 @@ The existing application remains operational until the native application passes
 
 Page, model and function editing will use the same workspace dirty-state and persistence pipeline as those editors are introduced.
 
+## Phase 2 model designer
+
+- Add, edit and remove models with table names, timestamps and soft deletes.
+- Add, edit and remove typed fields with nullable, index, unique, default and Laravel validation settings.
+- Add and remove model relationships, including foreign-key and pivot-table metadata.
+- Enforce contract-compatible PascalCase and snake_case names, uniqueness and reserved-field rules before persistence.
+- Prevent model deletion while another relationship still targets it.
+- Persist every model change through the shared dirty-document and autosave pipeline.
+
 ## Repository transition
 
 The native solution lives under `code/native/`. The previous Laravel/NativePHP implementation is preserved intact under `code/legacy-laravel/` until the native build has a working importer and passes the agreed parity gates. Local installers and generated artifacts belong in the ignored `builds/` directory.

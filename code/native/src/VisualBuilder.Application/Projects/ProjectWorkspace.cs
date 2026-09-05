@@ -30,6 +30,13 @@ public sealed class ProjectWorkspace(IProjectDocumentStore documents, IRecentPro
 
     public void MarkDirty() => IsDirty = Current is not null;
 
+    public void Update(Func<ProjectDocument, ProjectDocument> update)
+    {
+        if (Current is null) throw new InvalidOperationException("Open a project before making changes.");
+        Current = update(Current);
+        IsDirty = true;
+    }
+
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         if (Current is null || string.IsNullOrWhiteSpace(CurrentPath)) return;

@@ -1,5 +1,7 @@
 using VisualBuilder.Domain.Projects;
 using VisualBuilder.Infrastructure.Projects;
+using VisualBuilder.Application.Models;
+using VisualBuilder.Application.Projects;
 
 namespace VisualBuilder.Domain.Tests;
 
@@ -61,6 +63,27 @@ public sealed class ProjectPersistenceTests : IDisposable
         Assert.Equal(2, recent.Count);
         Assert.Equal("First renamed", recent[0].Name);
         Assert.Equal("Second", recent[1].Name);
+    }
+
+    [Fact]
+    public async Task Reopens_models_fields_and_relationships_without_data_loss()
+    {
+        var path = Path.Combine(_directory, "orders.vbproject");
+        var documents = new JsonProjectDocumentStore();
+        var workspace = new ProjectWorkspace(documents, new JsonRecentProjectsStore(Path.Combine(_directory, "recent.json")));
+        await workspace.CreateAsync(new("Orders", ApplicationType.Web, StarterKit.Livewire, DatabaseEngine.PostgreSql, true), path);
+        var designer = new ModelDesigner(workspace);
+        var customer = designer.AddModel(new("Customer", "customers", true, true));
+        var order = designer.AddModel(new("Order", "orders", true, false));
+        designer.AddField(customer.Id, new("email", "Email", "string", false, true, true, null, ["required", "email"]));
+        designer.AddRelationship(order.Id, new("customer", "belongs-to", customer.Id, "customer_id", null));
+        await workspace.SaveAsync();
+
+        var reopened = await documents.LoadAsync(path);
+
+        Assert.Equal(2, reopened.Iterations[0].Models.Count);
+        Assert.Equal(["required", "email"], reopened.Iterations[0].Models[0].Fields[0].ValidationRules);
+        Assert.Equal(customer.Id, reopened.Iterations[0].Models[1].Relationships[0].TargetModelId);
     }
 
     public void Dispose()
