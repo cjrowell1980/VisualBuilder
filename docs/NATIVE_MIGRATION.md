@@ -54,6 +54,16 @@ The existing application remains operational until the native application passes
 - The public/private source and commercial licensing model is recorded.
 - The native solution builds on a clean Windows development environment.
 
+## Phase 1 project workspace
+
+- New-project choices for application type, starter kit, database and Docker.
+- Versioned `.vbproject` JSON persistence with atomic replacement.
+- Open, save, recent-project history and 30-second dirty-document autosave.
+- Contract-compatible enum and property naming.
+- Native Windows CI build and test workflow.
+
+Page, model and function editing will use the same workspace dirty-state and persistence pipeline as those editors are introduced.
+
 ## Repository transition
 
 The new solution will live under `native/` during migration. The Laravel application remains at the repository root. It will not be moved into a legacy directory until the native build has a working importer and passes the agreed parity gates.

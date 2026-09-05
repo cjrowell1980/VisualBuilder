@@ -1,0 +1,35 @@
+name: native tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - 'contracts/**'
+      - '.github/workflows/native-tests.yml'
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'contracts/**'
+      - '.github/workflows/native-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build native solution
+        run: dotnet build native\VisualBuilder.slnx --configuration Release
+
+      - name: Run native tests
+        run: dotnet test native\tests\VisualBuilder.Domain.Tests\VisualBuilder.Domain.Tests.csproj --configuration Release --no-build

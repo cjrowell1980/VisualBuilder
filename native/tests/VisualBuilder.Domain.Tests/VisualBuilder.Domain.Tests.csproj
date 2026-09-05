@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VisualBuilder.Domain\VisualBuilder.Domain.csproj" />
+    <ProjectReference Include="..\..\src\VisualBuilder.Application\VisualBuilder.Application.csproj" />
+    <ProjectReference Include="..\..\src\VisualBuilder.Infrastructure\VisualBuilder.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

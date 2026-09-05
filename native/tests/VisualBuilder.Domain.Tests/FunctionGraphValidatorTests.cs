@@ -30,7 +30,7 @@ public sealed class FunctionGraphValidatorTests
     {
         var entry = Node(FunctionNodeKind.Event);
         var terminal = Node(FunctionNodeKind.Return);
-        var graph = Graph([entry, terminal], [new(Guid.NewGuid(), entry.Id, Guid.NewGuid())]);
+        var graph = Graph([entry, terminal], [new(Guid.NewGuid(), entry.Id, "next", Guid.NewGuid(), "input")]);
 
         Assert.Contains(_validator.Validate(graph), issue => issue.Code == "edge.dangling");
     }
@@ -72,10 +72,10 @@ public sealed class FunctionGraphValidatorTests
     }
 
     private static FunctionNode Node(FunctionNodeKind kind, IReadOnlyDictionary<string, object?>? configuration = null) =>
-        new(Guid.NewGuid(), kind, kind.ToString(), new(0, 0), configuration ?? new Dictionary<string, object?>());
+        new(Guid.NewGuid(), kind, 1, new(0, 0), configuration ?? new Dictionary<string, object?>());
 
-    private static FunctionEdge Edge(FunctionNode source, FunctionNode target) => new(Guid.NewGuid(), source.Id, target.Id);
+    private static FunctionEdge Edge(FunctionNode source, FunctionNode target) => new(Guid.NewGuid(), source.Id, "next", target.Id, "input");
 
     private static FunctionGraph Graph(IReadOnlyList<FunctionNode> nodes, IReadOnlyList<FunctionEdge> edges) =>
-        new(Guid.NewGuid(), "Test function", nodes, edges);
+        new(Guid.NewGuid(), "Test function", FunctionScope.Project, null, nodes, edges);
 }
