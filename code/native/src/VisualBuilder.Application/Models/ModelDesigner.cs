@@ -8,6 +8,7 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
 {
     public ModelDefinition AddModel(ModelInput input)
     {
+        input = Normalize(input);
         var document = RequireDocument();
         ValidateModel(input, document.Iterations[^1].Models);
         var model = new ModelDefinition(Guid.NewGuid(), input.Name.Trim(), input.TableName.Trim(), input.Timestamps,
@@ -18,6 +19,7 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
 
     public void UpdateModel(Guid modelId, ModelInput input)
     {
+        input = Normalize(input);
         var models = RequireDocument().Iterations[^1].Models;
         ValidateModel(input, models.Where(model => model.Id != modelId));
         UpdateModelCore(modelId, model => model with
@@ -32,11 +34,14 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
         var iteration = RequireDocument().Iterations[^1];
         if (iteration.Models.Any(model => model.Relationships.Any(relationship => relationship.TargetModelId == modelId)))
             throw new ModelDesignException("Remove relationships targeting this model before deleting it.");
+        if (iteration.Pages.Any(page => page.ModelId == modelId))
+            throw new ModelDesignException("Remove or rebind pages using this model before deleting it.");
         UpdateIteration(current => current with { Models = current.Models.Where(model => model.Id != modelId).ToArray() });
     }
 
     public FieldDefinition AddField(Guid modelId, FieldInput input)
     {
+        input = Normalize(input);
         var model = FindModel(modelId);
         ValidateField(input, model.Fields);
         var field = ToField(Guid.NewGuid(), input, model.Fields.Count);
@@ -46,6 +51,7 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
 
     public void UpdateField(Guid modelId, Guid fieldId, FieldInput input)
     {
+        input = Normalize(input);
         var model = FindModel(modelId);
         ValidateField(input, model.Fields.Where(field => field.Id != fieldId));
         UpdateModelCore(modelId, current => current with
@@ -54,18 +60,24 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
         });
     }
 
-    public void RemoveField(Guid modelId, Guid fieldId) => UpdateModelCore(modelId, model => model with
+    public void RemoveField(Guid modelId, Guid fieldId)
     {
-        Fields = model.Fields.Where(field => field.Id != fieldId)
-            .Select((field, position) => field with { Position = position }).ToArray()
-    });
+        if (RequireDocument().Iterations[^1].Pages.Any(page => page.Controls.Any(control => control.FieldId == fieldId)))
+            throw new ModelDesignException("Remove controls bound to this field before deleting it.");
+        UpdateModelCore(modelId, model => model with
+        {
+            Fields = model.Fields.Where(field => field.Id != fieldId)
+                .Select((field, position) => field with { Position = position }).ToArray()
+        });
+    }
 
     public RelationshipDefinition AddRelationship(Guid modelId, RelationshipInput input)
     {
         var model = FindModel(modelId);
-        if (!RequireDocument().Iterations[^1].Models.Any(candidate => candidate.Id == input.TargetModelId))
+        var target = RequireDocument().Iterations[^1].Models.FirstOrDefault(candidate => candidate.Id == input.TargetModelId);
+        if (target is null)
             throw new ModelDesignException("Select a target model that exists in this iteration.");
-        if (string.IsNullOrWhiteSpace(input.Name)) throw new ModelDesignException("A relationship name is required.");
+        input = Normalize(input, model, target);
         if (model.Relationships.Any(item => item.Name.Equals(input.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
             throw new ModelDesignException("Relationship names must be unique within a model.");
 
@@ -130,6 +142,33 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
     private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     public static string SuggestedTableName(string modelName) => ToSnakeCase(modelName) + "s";
     private static string ToSnakeCase(string value) => Regex.Replace(value.Trim(), "(?<!^)([A-Z])", "_$1").ToLowerInvariant();
+
+    private static ModelInput Normalize(ModelInput input)
+    {
+        var name = string.IsNullOrWhiteSpace(input.Name) ? "CustomerOrder" : input.Name.Trim();
+        var table = string.IsNullOrWhiteSpace(input.TableName) ? SuggestedTableName(name) : input.TableName.Trim();
+        return input with { Name = name, TableName = table };
+    }
+
+    private static FieldInput Normalize(FieldInput input)
+    {
+        var name = string.IsNullOrWhiteSpace(input.Name) ? "company_name" : input.Name.Trim();
+        var label = string.IsNullOrWhiteSpace(input.Label) ? "Company name" : input.Label.Trim();
+        return input with { Name = name, Label = label, Type = string.IsNullOrWhiteSpace(input.Type) ? "string" : input.Type };
+    }
+
+    private static RelationshipInput Normalize(RelationshipInput input, ModelDefinition source, ModelDefinition target)
+    {
+        var targetName = ToSnakeCase(target.Name);
+        var name = string.IsNullOrWhiteSpace(input.Name) ? targetName : input.Name.Trim();
+        var foreignKey = string.IsNullOrWhiteSpace(input.ForeignKey) && input.Type == "belongs-to" ? targetName + "_id" : input.ForeignKey;
+        var pivot = string.IsNullOrWhiteSpace(input.PivotTable) && input.Type == "belongs-to-many"
+            ? string.Join('_', new[] { Singular(source.TableName), Singular(target.TableName) }.Order())
+            : input.PivotTable;
+        return input with { Name = name, ForeignKey = foreignKey, PivotTable = pivot };
+    }
+
+    private static string Singular(string table) => table.EndsWith('s') ? table[..^1] : table;
 
     private static readonly HashSet<string> ReservedFields = ["id", "created_at", "updated_at", "deleted_at"];
     public static readonly string[] SupportedFieldTypes = ["string", "text", "integer", "decimal", "boolean", "date", "datetime", "json"];

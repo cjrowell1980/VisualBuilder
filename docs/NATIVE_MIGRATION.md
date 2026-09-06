@@ -76,6 +76,15 @@ Page, model and function editing will use the same workspace dirty-state and per
 - Provide File menu actions for save-aware project closing and application exit.
 - Warn that removing a relationship also removes the target model's referential deletion protection.
 
+## Phase 3 page designer
+
+- Add, edit and remove pages with route slug, page type, layout and optional model binding.
+- Add, edit, remove and reorder page controls with type, responsive width, field binding and configuration values.
+- Validate unique route slugs and ensure bound fields belong to the page's selected model.
+- Protect models and fields from deletion while pages or controls still reference them.
+- Treat visible placeholder examples as defaults when model, field, relationship, page and control names are left blank.
+- Autosave page changes and persist pages and controls in the versioned `.vbproject` document.
+
 ## Repository transition
 
 The native solution lives under `code/native/`. The previous Laravel/NativePHP implementation is preserved intact under `code/legacy-laravel/` until the native build has a working importer and passes the agreed parity gates. Local installers and generated artifacts belong in the ignored `builds/` directory.

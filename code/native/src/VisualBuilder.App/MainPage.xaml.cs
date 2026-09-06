@@ -120,6 +120,7 @@ public sealed partial class MainPage : Page
         FileSaveItem.IsEnabled = true;
         FileCloseItem.IsEnabled = true;
         AddModelButton.IsEnabled = true;
+        OpenPageDesignerButton.IsEnabled = true;
         StatusText.Text = "Project ready";
         App.MainWindow.Title = $"{project.Name} — VisualBuilder";
         _selectedModel = null;
@@ -284,8 +285,7 @@ public sealed partial class MainPage : Page
         var timestamps = new CheckBox { Content = "Add created_at and updated_at", IsChecked = model?.Timestamps ?? true };
         var softDeletes = new CheckBox { Content = "Add soft deletes", IsChecked = model?.SoftDeletes ?? false };
         if (await DialogAsync(title, Panel(name, table, timestamps, softDeletes), "Save") != ContentDialogResult.Primary) return null;
-        var tableName = string.IsNullOrWhiteSpace(table.Text) ? ModelDesigner.SuggestedTableName(name.Text) : table.Text;
-        return new(name.Text, tableName, timestamps.IsChecked == true, softDeletes.IsChecked == true);
+        return new(name.Text, table.Text, timestamps.IsChecked == true, softDeletes.IsChecked == true);
     }
 
     private async Task<FieldInput?> ShowFieldDialogAsync(string title, FieldDefinition? field)
@@ -389,6 +389,7 @@ public sealed partial class MainPage : Page
         FileSaveItem.IsEnabled = false;
         FileCloseItem.IsEnabled = false;
         AddModelButton.IsEnabled = false;
+        OpenPageDesignerButton.IsEnabled = false;
         StatusText.Text = "Project closed";
         App.MainWindow.Title = "VisualBuilder";
     }
@@ -408,6 +409,7 @@ public sealed partial class MainPage : Page
     }
 
     private static string Display<T>(T value) where T : Enum => value.ToString();
+    private void OpenPageDesigner_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(PageDesignerPage));
     private static void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(
         picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 

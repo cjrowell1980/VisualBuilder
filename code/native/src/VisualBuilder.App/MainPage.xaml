@@ -25,6 +25,7 @@
                     <StackPanel Grid.Row="0" Spacing="10">
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Project explorer" />
                         <Grid><TextBlock Text="Models" FontWeight="SemiBold" VerticalAlignment="Center" /><Button x:Name="AddModelButton" HorizontalAlignment="Right" Content="+ Add" Click="AddModel_Click" IsEnabled="False" /></Grid>
+                        <Button x:Name="OpenPageDesignerButton" Content="Pages and controls" HorizontalAlignment="Stretch" Click="OpenPageDesigner_Click" IsEnabled="False" />
                     </StackPanel>
                     <ListView x:Name="ModelsList" Grid.Row="1" Margin="0,8" IsItemClickEnabled="True" ItemClick="ModelsList_ItemClick" SelectionMode="Single">
                         <ListView.ItemTemplate><DataTemplate><StackPanel Padding="4"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding TableName}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></StackPanel></DataTemplate></ListView.ItemTemplate>
