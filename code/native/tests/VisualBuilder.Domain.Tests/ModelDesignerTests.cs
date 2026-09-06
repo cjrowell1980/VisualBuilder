@@ -6,6 +6,14 @@ namespace VisualBuilder.Domain.Tests;
 
 public sealed class ModelDesignerTests
 {
+    [Theory]
+    [InlineData("Company", "companies")]
+    [InlineData("Category", "categories")]
+    [InlineData("Address", "addresses")]
+    [InlineData("Product", "products")]
+    public void Suggests_common_table_plurals(string model, string table) =>
+        Assert.Equal(table, ModelDesigner.SuggestedTableName(model));
+
     [Fact]
     public async Task Adds_updates_and_removes_a_model_and_its_fields()
     {

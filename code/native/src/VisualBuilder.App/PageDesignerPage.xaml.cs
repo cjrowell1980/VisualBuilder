@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using VisualBuilder.Application.Pages;
 using VisualBuilder.Domain.Projects;
 
@@ -8,15 +9,22 @@ namespace VisualBuilder.App;
 public sealed partial class PageDesignerPage : Page
 {
     private PageDefinition? _selectedPage;
+    private Guid? _requestedPageId;
     private readonly DispatcherTimer _autosaveTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
     public PageDesignerPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => RefreshPages();
+        Loaded += (_, _) => { RefreshPages(); if (_requestedPageId is Guid id && Pages.FirstOrDefault(page => page.Id == id) is { } page) SelectPage(page); };
         Unloaded += (_, _) => _autosaveTimer.Stop();
         _autosaveTimer.Tick += Autosave_Tick;
         _autosaveTimer.Start();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _requestedPageId = e.Parameter is Guid id ? id : null;
     }
 
     private IReadOnlyList<PageDefinition> Pages => App.Workspace.Current?.Iterations[^1].Pages ?? [];
@@ -48,6 +56,11 @@ public sealed partial class PageDesignerPage : Page
     private void PagesList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is PageExplorerItem item) SelectPage(item.Page);
+    }
+
+    private void ExplorerModelsList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ModelDefinition model) Frame.Navigate(typeof(MainPage), model.Id);
     }
 
     private async void AddControl_Click(object sender, RoutedEventArgs e)
@@ -119,6 +132,7 @@ public sealed partial class PageDesignerPage : Page
         PagesList.ItemsSource = null;
         PagesList.ItemsSource = Pages.OrderBy(page => page.Position).Select(page =>
             new PageExplorerItem(page, ExplorerName(page), ExplorerPath(page))).ToArray();
+        ExplorerModelsList.ItemsSource = Models;
         NoPageText.Visibility = Pages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (Pages.Count == 0) PageEditor.Visibility = Visibility.Collapsed;
     }
@@ -184,6 +198,17 @@ public sealed partial class PageDesignerPage : Page
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
+    private async void CloseProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Workspace.IsDirty && !await SaveAsync()) return;
+        App.Workspace.Close();
+        Frame.Navigate(typeof(MainPage));
+    }
+    private async void ExitApplication_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Workspace.IsDirty && !await SaveAsync()) return;
+        App.MainWindow.Close();
+    }
     private async void Autosave_Tick(object? sender, object e) { if (App.Workspace.IsDirty) await SaveAsync(); }
     private async void Back_Click(object sender, RoutedEventArgs e)
     {

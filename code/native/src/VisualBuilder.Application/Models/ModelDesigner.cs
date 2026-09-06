@@ -158,7 +158,13 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
         EmptyToNull(input.DefaultValue), input.ValidationRules.Where(rule => !string.IsNullOrWhiteSpace(rule)).Select(rule => rule.Trim()).ToArray(), position);
 
     private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    public static string SuggestedTableName(string modelName) => ToSnakeCase(modelName) + "s";
+    public static string SuggestedTableName(string modelName)
+    {
+        var name = ToSnakeCase(modelName);
+        if (name.EndsWith('y') && name.Length > 1 && !"aeiou".Contains(name[^2])) return name[..^1] + "ies";
+        if (name.EndsWith("s") || name.EndsWith("x") || name.EndsWith("z") || name.EndsWith("ch") || name.EndsWith("sh")) return name + "es";
+        return name + "s";
+    }
     private static string ToSnakeCase(string value) => Regex.Replace(value.Trim(), "(?<!^)([A-Z])", "_$1").ToLowerInvariant();
 
     private static ModelInput Normalize(ModelInput input)

@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using Windows.Storage.Pickers;
 using VisualBuilder.Application.Projects;
 using VisualBuilder.Application.Models;
@@ -11,6 +12,7 @@ public sealed partial class MainPage : Page
 {
     private readonly DispatcherTimer _autosaveTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private ModelDefinition? _selectedModel;
+    private Guid? _requestedModelId;
 
     public MainPage()
     {
@@ -20,10 +22,16 @@ public sealed partial class MainPage : Page
         _autosaveTimer.Start();
     }
 
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _requestedModelId = e.Parameter is Guid id ? id : null;
+    }
+
     private async void MainPage_Loaded(object sender, RoutedEventArgs e)
     {
         if (App.Workspace.Current is not null) await ProjectOpenedAsync();
-        else await RefreshRecentProjectsAsync();
+        else { ResetWorkspaceView(); await RefreshRecentProjectsAsync(); }
     }
 
     private async void NewProject_Click(object sender, RoutedEventArgs e)
@@ -120,6 +128,8 @@ public sealed partial class MainPage : Page
         ProjectSummaryText.Text = $"{Display(project.ApplicationType)} • {Display(project.StarterKit)} • {Display(project.Database)}";
         EmptyState.Visibility = Visibility.Collapsed;
         ProjectState.Visibility = Visibility.Visible;
+        ExplorerPane.Visibility = Visibility.Visible;
+        PropertiesPane.Visibility = Visibility.Visible;
         SaveButton.IsEnabled = true;
         FileSaveItem.IsEnabled = true;
         FileCloseItem.IsEnabled = true;
@@ -129,7 +139,12 @@ public sealed partial class MainPage : Page
         App.MainWindow.Title = $"{project.Name} — VisualBuilder";
         _selectedModel = null;
         RefreshModels();
-        if (CurrentModels().FirstOrDefault() is { } firstModel) SelectModel(firstModel);
+        var initialModel = _requestedModelId is Guid id
+            ? CurrentModels().FirstOrDefault(model => model.Id == id)
+            : null;
+        initialModel ??= CurrentModels().FirstOrDefault();
+        if (initialModel is not null) SelectModel(initialModel);
+        _requestedModelId = null;
         await RefreshRecentProjectsAsync();
     }
 
@@ -153,12 +168,17 @@ public sealed partial class MainPage : Page
     {
         if (_selectedModel is null || !await ConfirmAsync("Delete model?", $"Delete {_selectedModel.Name} and all of its fields and relationships?")) return;
         var id = _selectedModel.Id;
-        await ApplyModelChangeAsync(() => { App.Models.RemoveModel(id); _selectedModel = null; RefreshModels(); });
+        await ApplyModelChangeAsync(() => { App.Models.RemoveModel(id); _selectedModel = null; });
     }
 
     private void ModelsList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ModelDefinition model) SelectModel(model);
+    }
+
+    private void ExplorerPagesList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is PageDefinition page) Frame.Navigate(typeof(PageDesignerPage), page.Id);
     }
 
     private async void AddField_Click(object sender, RoutedEventArgs e)
@@ -186,8 +206,12 @@ public sealed partial class MainPage : Page
 
     private void FieldsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        EditFieldButton.IsEnabled = FieldsList.SelectedItem is FieldDefinition;
-        DeleteFieldButton.IsEnabled = FieldsList.SelectedItem is FieldDefinition;
+        var field = FieldsList.SelectedItem as FieldDefinition;
+        EditFieldButton.IsEnabled = field is not null;
+        DeleteFieldButton.IsEnabled = field is not null;
+        FieldDetailsText.Text = field is null
+            ? "Select a field to view validation."
+            : $"Field: {field.Name}\nValidation: {(field.ValidationRules.Count == 0 ? "None" : string.Join(", ", field.ValidationRules))}";
     }
 
     private async void AddRelationship_Click(object sender, RoutedEventArgs e)
@@ -219,7 +243,15 @@ public sealed partial class MainPage : Page
         var selected = item is not null;
         EditRelationshipButton.IsEnabled = selected;
         DeleteRelationshipButton.IsEnabled = selected;
+        OpenRelationshipTargetButton.IsEnabled = selected;
         RelationshipDetailsText.Text = item?.Details ?? "Select a relationship to view its details.";
+    }
+
+    private void OpenRelationshipTarget_Click(object sender, RoutedEventArgs e)
+    {
+        if (RelationshipsList.SelectedItem is RelationshipListItem item &&
+            CurrentModels().FirstOrDefault(model => model.Id == item.Relationship.TargetModelId) is { } target)
+            SelectModel(target);
     }
 
     private void InboundRelationshipsList_ItemClick(object sender, ItemClickEventArgs e)
@@ -237,6 +269,7 @@ public sealed partial class MainPage : Page
             RefreshModels();
             if (selectedId is not null && CurrentModels().FirstOrDefault(model => model.Id == selectedId) is { } selected)
                 SelectModel(selected);
+            else if (_selectedModel is null) ClearModelView();
             StatusText.Text = "Unsaved changes — autosave pending";
         }
         catch (ModelDesignException exception)
@@ -250,22 +283,34 @@ public sealed partial class MainPage : Page
         var models = CurrentModels();
         ModelsList.ItemsSource = null;
         ModelsList.ItemsSource = models;
+        ExplorerPagesList.ItemsSource = App.Workspace.Current?.Iterations[^1].Pages.OrderBy(page => page.Position).ToArray();
         NoModelInfo.IsOpen = models.Count == 0;
         if (models.Count == 0)
         {
-            _selectedModel = null;
-            ModelEditor.Visibility = Visibility.Collapsed;
-            AddRelationshipButton.IsEnabled = false;
-            ModelOptionsText.Text = "Select a model";
-            ModelNameText.Text = "";
-            ModelTableText.Text = "";
-            FieldsList.ItemsSource = null;
-            RelationshipsList.ItemsSource = null;
-            InboundRelationshipsList.ItemsSource = null;
-            RelationshipDetailsText.Text = "Select a relationship to view its details.";
-            EditRelationshipButton.IsEnabled = false;
-            DeleteRelationshipButton.IsEnabled = false;
+            ClearModelView();
         }
+    }
+
+    private void ClearModelView()
+    {
+        _selectedModel = null;
+        ModelsList.SelectedItem = null;
+        ModelEditor.Visibility = Visibility.Collapsed;
+        NoModelInfo.IsOpen = CurrentModels().Count == 0;
+        AddRelationshipButton.IsEnabled = false;
+        ModelOptionsText.Text = "Select a model";
+        ModelNameText.Text = "";
+        ModelTableText.Text = "";
+        FieldsList.ItemsSource = null;
+        RelationshipsList.ItemsSource = null;
+        InboundRelationshipsList.ItemsSource = null;
+        FieldDetailsText.Text = "Select a field to view validation.";
+        RelationshipDetailsText.Text = "Select a relationship to view its details.";
+        EditFieldButton.IsEnabled = false;
+        DeleteFieldButton.IsEnabled = false;
+        EditRelationshipButton.IsEnabled = false;
+        DeleteRelationshipButton.IsEnabled = false;
+        OpenRelationshipTargetButton.IsEnabled = false;
     }
 
     private void SelectModel(ModelDefinition model)
@@ -296,6 +341,8 @@ public sealed partial class MainPage : Page
         DeleteFieldButton.IsEnabled = false;
         DeleteRelationshipButton.IsEnabled = false;
         EditRelationshipButton.IsEnabled = false;
+        OpenRelationshipTargetButton.IsEnabled = false;
+        FieldDetailsText.Text = "Select a field to view validation.";
         RelationshipDetailsText.Text = "Select a relationship to view its details.";
     }
 
@@ -441,11 +488,14 @@ public sealed partial class MainPage : Page
     {
         _selectedModel = null;
         ModelsList.ItemsSource = null;
+        ExplorerPagesList.ItemsSource = null;
         FieldsList.ItemsSource = null;
         RelationshipsList.ItemsSource = null;
         InboundRelationshipsList.ItemsSource = null;
         ProjectState.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = Visibility.Visible;
+        ExplorerPane.Visibility = Visibility.Collapsed;
+        PropertiesPane.Visibility = Visibility.Collapsed;
         SaveButton.IsEnabled = false;
         FileSaveItem.IsEnabled = false;
         FileCloseItem.IsEnabled = false;
