@@ -8,14 +8,16 @@ namespace VisualBuilder.App;
 
 public sealed partial class PageDesignerPage : Page
 {
+    public const string CreatePageParameter = "create-page";
     private PageDefinition? _selectedPage;
     private Guid? _requestedPageId;
+    private bool _createPageOnLoad;
     private readonly DispatcherTimer _autosaveTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
     public PageDesignerPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => { RefreshPages(); if (_requestedPageId is Guid id && Pages.FirstOrDefault(page => page.Id == id) is { } page) SelectPage(page); };
+        Loaded += PageDesignerPage_Loaded;
         Unloaded += (_, _) => _autosaveTimer.Stop();
         _autosaveTimer.Tick += Autosave_Tick;
         _autosaveTimer.Start();
@@ -25,12 +27,29 @@ public sealed partial class PageDesignerPage : Page
     {
         base.OnNavigatedTo(e);
         _requestedPageId = e.Parameter is Guid id ? id : null;
+        _createPageOnLoad = Equals(e.Parameter, CreatePageParameter);
+    }
+
+    private async void PageDesignerPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        RefreshPages();
+        if (_requestedPageId is Guid id && Pages.FirstOrDefault(page => page.Id == id) is { } page) SelectPage(page);
+        if (_createPageOnLoad && Pages.Count == 0)
+        {
+            _createPageOnLoad = false;
+            await AddPageAsync();
+        }
     }
 
     private IReadOnlyList<PageDefinition> Pages => App.Workspace.Current?.Iterations[^1].Pages ?? [];
     private IReadOnlyList<ModelDefinition> Models => App.Workspace.Current?.Iterations[^1].Models ?? [];
 
     private async void AddPage_Click(object sender, RoutedEventArgs e)
+    {
+        await AddPageAsync();
+    }
+
+    private async Task AddPageAsync()
     {
         var input = await ShowPageDialogAsync("Add page", null);
         if (input is null) return;

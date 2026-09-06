@@ -520,7 +520,11 @@ public sealed partial class MainPage : Page
     }
 
     private static string Display<T>(T value) where T : Enum => value.ToString();
-    private void OpenPageDesigner_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(PageDesignerPage));
+    private void OpenPageDesigner_Click(object sender, RoutedEventArgs e)
+    {
+        var createFirstPage = App.Workspace.Current?.Iterations[^1].Pages.Count == 0;
+        Frame.Navigate(typeof(PageDesignerPage), createFirstPage ? PageDesignerPage.CreatePageParameter : null);
+    }
     private static void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(
         picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 
