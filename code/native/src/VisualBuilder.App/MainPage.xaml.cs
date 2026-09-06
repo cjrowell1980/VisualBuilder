@@ -5,6 +5,7 @@ using Windows.Storage.Pickers;
 using VisualBuilder.Application.Projects;
 using VisualBuilder.Application.Models;
 using VisualBuilder.Domain.Projects;
+using VisualBuilder.Domain.Functions;
 
 namespace VisualBuilder.App;
 
@@ -284,6 +285,7 @@ public sealed partial class MainPage : Page
         ModelsList.ItemsSource = null;
         ModelsList.ItemsSource = models;
         ExplorerPagesList.ItemsSource = App.Workspace.Current?.Iterations[^1].Pages.OrderBy(page => page.Position).ToArray();
+        ExplorerFunctionsList.ItemsSource = App.Workspace.Current?.Iterations[^1].Functions;
         NoModelInfo.IsOpen = models.Count == 0;
         if (models.Count == 0)
         {
@@ -489,6 +491,7 @@ public sealed partial class MainPage : Page
         _selectedModel = null;
         ModelsList.ItemsSource = null;
         ExplorerPagesList.ItemsSource = null;
+        ExplorerFunctionsList.ItemsSource = null;
         FieldsList.ItemsSource = null;
         RelationshipsList.ItemsSource = null;
         InboundRelationshipsList.ItemsSource = null;
@@ -524,6 +527,11 @@ public sealed partial class MainPage : Page
     {
         var createFirstPage = App.Workspace.Current?.Iterations[^1].Pages.Count == 0;
         Frame.Navigate(typeof(PageDesignerPage), createFirstPage ? PageDesignerPage.CreatePageParameter : null);
+    }
+    private void OpenFunctionDesigner_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(FunctionDesignerPage));
+    private void ExplorerFunctionsList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is FunctionGraph graph) Frame.Navigate(typeof(FunctionDesignerPage), graph.Id);
     }
     private static void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(
         picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));

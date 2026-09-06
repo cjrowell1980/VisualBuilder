@@ -2,6 +2,8 @@ using VisualBuilder.Domain.Projects;
 using VisualBuilder.Infrastructure.Projects;
 using VisualBuilder.Application.Models;
 using VisualBuilder.Application.Projects;
+using VisualBuilder.Application.Functions;
+using VisualBuilder.Domain.Functions;
 
 namespace VisualBuilder.Domain.Tests;
 
@@ -84,6 +86,26 @@ public sealed class ProjectPersistenceTests : IDisposable
         Assert.Equal(2, reopened.Iterations[0].Models.Count);
         Assert.Equal(["required", "email"], reopened.Iterations[0].Models[0].Fields[0].ValidationRules);
         Assert.Equal(customer.Id, reopened.Iterations[0].Models[1].Relationships[0].TargetModelId);
+    }
+
+    [Fact]
+    public async Task Reopens_function_nodes_edges_and_configuration_without_data_loss()
+    {
+        var path = Path.Combine(_directory, "functions.vbproject");
+        var documents = new JsonProjectDocumentStore();
+        var workspace = new ProjectWorkspace(documents, new JsonRecentProjectsStore(Path.Combine(_directory, "recent-functions.json")));
+        await workspace.CreateAsync(new("Functions", ApplicationType.Web, StarterKit.Livewire, DatabaseEngine.Sqlite, false), path);
+        var designer = new FunctionDesigner(workspace, new FunctionGraphValidator());
+        var graph = designer.AddFunction(new("Notify user", FunctionScope.Project, null, "clicked"));
+        designer.AddBlock(graph.Id, FunctionNodeKind.Notify, new Dictionary<string, object?> { ["value"] = "Saved" });
+        await workspace.SaveAsync();
+
+        var reopened = await documents.LoadAsync(path);
+        var function = reopened.Iterations[0].Functions.Single();
+        Assert.Equal("Notify user", function.Name);
+        Assert.Equal(3, function.Nodes.Count);
+        Assert.Equal("Saved", function.Nodes.Single(node => node.Kind == FunctionNodeKind.Notify).Configuration["value"]?.ToString());
+        Assert.Equal(2, function.Edges.Count);
     }
 
     public void Dispose()

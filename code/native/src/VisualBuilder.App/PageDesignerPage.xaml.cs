@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using VisualBuilder.Application.Pages;
 using VisualBuilder.Domain.Projects;
+using VisualBuilder.Domain.Functions;
 
 namespace VisualBuilder.App;
 
@@ -82,6 +83,12 @@ public sealed partial class PageDesignerPage : Page
         if (e.ClickedItem is ModelDefinition model) Frame.Navigate(typeof(MainPage), model.Id);
     }
 
+    private void OpenFunctionDesigner_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(FunctionDesignerPage));
+    private void ExplorerFunctionsList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is FunctionGraph graph) Frame.Navigate(typeof(FunctionDesignerPage), graph.Id);
+    }
+
     private async void AddControl_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedPage is null) return;
@@ -152,6 +159,7 @@ public sealed partial class PageDesignerPage : Page
         PagesList.ItemsSource = Pages.OrderBy(page => page.Position).Select(page =>
             new PageExplorerItem(page, ExplorerName(page), ExplorerPath(page))).ToArray();
         ExplorerModelsList.ItemsSource = Models;
+        ExplorerFunctionsList.ItemsSource = App.Workspace.Current?.Iterations[^1].Functions;
         NoPageText.Visibility = Pages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (Pages.Count == 0) PageEditor.Visibility = Visibility.Collapsed;
     }

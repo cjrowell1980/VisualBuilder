@@ -24,12 +24,14 @@ public sealed class FunctionGraphValidator
                 issues.Add(new("edge.self-reference", "A node cannot connect directly to itself.", edge.Id));
         }
 
+        if (graph.Nodes.Any(node => node.Kind is FunctionNodeKind.CreateRecord or FunctionNodeKind.UpdateRecord or FunctionNodeKind.DeleteRecord) &&
+            !graph.Nodes.Any(node => node.Kind == FunctionNodeKind.Validate))
+            issues.Add(new("write.validation-required", "Database write functions must include a validation node."));
+
         if (graph.Nodes.Any(node => node.Kind == FunctionNodeKind.DeleteRecord))
         {
             if (!graph.Nodes.Any(node => node.Kind == FunctionNodeKind.Authorize))
                 issues.Add(new("delete.authorization-required", "Delete functions must include an authorization node."));
-            if (!graph.Nodes.Any(node => node.Kind == FunctionNodeKind.Validate))
-                issues.Add(new("delete.validation-required", "Delete functions must include a validation node."));
         }
 
         ValidateCycles(graph, nodeIds, issues);

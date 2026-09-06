@@ -85,6 +85,15 @@ Page, model and function editing will use the same workspace dirty-state and per
 - Treat visible placeholder examples as defaults when model, field, relationship, page and control names are left blank.
 - Autosave page changes and persist pages and controls in the versioned `.vbproject` document.
 
+## Phase 4 function designer
+
+- Add, edit and remove page-scoped and project-scoped functions.
+- Start every function with a managed Event block and terminate it with a managed Return block.
+- Insert, configure and remove typed validation, authorization, CRUD, condition, value, notification, navigation and email blocks.
+- Bind functions to page or control events without allowing a page-scoped function to cross its page boundary.
+- Validate graphs continuously and require validation before database writes and authorization before deletes.
+- Persist functions, block configuration, graph edges and event bindings through the shared `.vbproject` workspace.
+
 ## Repository transition
 
 The native solution lives under `code/native/`. The previous Laravel/NativePHP implementation is preserved intact under `code/legacy-laravel/` until the native build has a working importer and passes the agreed parity gates. Local installers and generated artifacts belong in the ignored `builds/` directory.

@@ -45,7 +45,19 @@ public sealed class FunctionGraphValidatorTests
 
         var issues = _validator.Validate(graph);
         Assert.Contains(issues, issue => issue.Code == "delete.authorization-required");
-        Assert.Contains(issues, issue => issue.Code == "delete.validation-required");
+        Assert.Contains(issues, issue => issue.Code == "write.validation-required");
+    }
+
+    [Theory]
+    [InlineData(FunctionNodeKind.CreateRecord)]
+    [InlineData(FunctionNodeKind.UpdateRecord)]
+    public void Requires_validation_for_database_writes(FunctionNodeKind kind)
+    {
+        var entry = Node(FunctionNodeKind.Event);
+        var write = Node(kind);
+        var terminal = Node(FunctionNodeKind.Return);
+        Assert.Contains(_validator.Validate(Graph([entry, write, terminal], [Edge(entry, write), Edge(write, terminal)])),
+            issue => issue.Code == "write.validation-required");
     }
 
     [Fact]
