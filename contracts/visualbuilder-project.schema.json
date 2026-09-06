@@ -110,7 +110,9 @@
         "layout": { "enum": ["app", "full-width", "guest"] },
         "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } },
         "eventBindings": { "type": "array", "items": { "$ref": "#/$defs/eventBinding" } },
-        "position": { "type": "integer", "minimum": 0 }
+        "position": { "type": "integer", "minimum": 0 },
+        "category": { "type": ["string", "null"], "maxLength": 240 },
+        "parentPageId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] }
       }
     },
     "control": {

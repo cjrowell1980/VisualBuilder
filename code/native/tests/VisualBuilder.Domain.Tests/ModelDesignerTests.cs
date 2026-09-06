@@ -69,6 +69,24 @@ public sealed class ModelDesignerTests
     }
 
     [Fact]
+    public async Task Updates_relationship_details_and_model_aware_field_suggestions()
+    {
+        var workspace = await Workspace();
+        var designer = new ModelDesigner(workspace);
+        var order = designer.AddModel(new("Order", "orders", true, false));
+        var customer = designer.AddModel(new("Customer", "customers", true, false));
+        var field = designer.AddField(order.Id, new("", "", "", false, false, false, null, []));
+        var relationship = designer.AddRelationship(order.Id, new("customer", "belongs-to", customer.Id, "customer_id", null));
+
+        designer.UpdateRelationship(order.Id, relationship.Id, new("buyer", "has-one", customer.Id, "buyer_id", null));
+
+        var updated = workspace.Current!.Iterations[0].Models.Single(model => model.Id == order.Id);
+        Assert.Equal("number", field.Name);
+        Assert.Equal("buyer", updated.Relationships.Single().Name);
+        Assert.Equal("has-one", updated.Relationships.Single().Type);
+    }
+
+    [Fact]
     public async Task Persists_model_changes_in_the_project_document()
     {
         var documentStore = new InMemoryDocumentStore();

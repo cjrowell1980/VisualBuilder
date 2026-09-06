@@ -12,7 +12,7 @@ public sealed partial class PageDesigner(ProjectWorkspace workspace)
         var iteration = CurrentIteration();
         ValidatePage(input, iteration.Pages, iteration.Models);
         var page = new PageDefinition(Guid.NewGuid(), input.ModelId, input.Name, input.Slug, input.Type,
-            input.Layout, [], [], iteration.Pages.Count);
+            input.Layout, [], [], iteration.Pages.Count, EmptyToNull(input.Category), input.ParentPageId);
         UpdateIteration(current => current with { Pages = [.. current.Pages, page] });
         return page;
     }
@@ -24,15 +24,21 @@ public sealed partial class PageDesigner(ProjectWorkspace workspace)
         ValidatePage(input, iteration.Pages.Where(page => page.Id != pageId), iteration.Models);
         UpdatePageCore(pageId, page => page with
         {
-            Name = input.Name, Slug = input.Slug, Type = input.Type, Layout = input.Layout, ModelId = input.ModelId
+            Name = input.Name, Slug = input.Slug, Type = input.Type, Layout = input.Layout, ModelId = input.ModelId,
+            Category = EmptyToNull(input.Category), ParentPageId = input.ParentPageId
         });
     }
 
-    public void RemovePage(Guid pageId) => UpdateIteration(iteration => iteration with
+    public void RemovePage(Guid pageId)
     {
-        Pages = iteration.Pages.Where(page => page.Id != pageId)
-            .Select((page, position) => page with { Position = position }).ToArray()
-    });
+        if (CurrentIteration().Pages.Any(page => page.ParentPageId == pageId))
+            throw new PageDesignException("Move or remove child pages before deleting their parent page.");
+        UpdateIteration(iteration => iteration with
+        {
+            Pages = iteration.Pages.Where(page => page.Id != pageId)
+                .Select((page, position) => page with { Position = position }).ToArray()
+        });
+    }
 
     public ControlDefinition AddControl(Guid pageId, ControlInput input)
     {
@@ -120,6 +126,8 @@ public sealed partial class PageDesigner(ProjectWorkspace workspace)
         if (!SupportedLayouts.Contains(input.Layout)) throw new PageDesignException("Select a supported page layout.");
         if (input.ModelId is not null && !models.Any(model => model.Id == input.ModelId))
             throw new PageDesignException("Select a model that exists in this iteration.");
+        if (input.ParentPageId is not null && !existing.Any(page => page.Id == input.ParentPageId))
+            throw new PageDesignException("Select a parent page that exists in this iteration.");
         if (existing.Any(page => page.Slug.Equals(input.Slug, StringComparison.OrdinalIgnoreCase)))
             throw new PageDesignException("Page slugs must be unique.");
     }
@@ -139,12 +147,14 @@ public sealed partial class PageDesigner(ProjectWorkspace workspace)
     public static readonly string[] SupportedLayouts = ["app", "full-width", "guest"];
     public static readonly string[] SupportedControlTypes = ["heading", "text", "input", "textarea", "select", "checkbox", "date", "button", "table", "card"];
     public static readonly string[] SupportedWidths = ["full", "half", "third", "quarter"];
+    private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")]
     private static partial Regex SlugPattern();
 }
 
-public sealed record PageInput(string Name, string Slug, string Type, string Layout, Guid? ModelId);
+public sealed record PageInput(string Name, string Slug, string Type, string Layout, Guid? ModelId,
+    string? Category = null, Guid? ParentPageId = null);
 public sealed record ControlInput(string Type, string Label, string Width, Guid? FieldId,
     IReadOnlyDictionary<string, object?> Configuration);
 public sealed class PageDesignException(string message) : Exception(message);

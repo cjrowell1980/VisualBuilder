@@ -20,7 +20,11 @@ public sealed partial class MainPage : Page
         _autosaveTimer.Start();
     }
 
-    private async void MainPage_Loaded(object sender, RoutedEventArgs e) => await RefreshRecentProjectsAsync();
+    private async void MainPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (App.Workspace.Current is not null) await ProjectOpenedAsync();
+        else await RefreshRecentProjectsAsync();
+    }
 
     private async void NewProject_Click(object sender, RoutedEventArgs e)
     {
@@ -189,23 +193,15 @@ public sealed partial class MainPage : Page
     private async void AddRelationship_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedModel is null) return;
-        var targets = CurrentModels().Where(model => model.Id != _selectedModel.Id).ToArray();
-        if (targets.Length == 0)
-        {
-            await ShowErrorAsync("Another model required", "Add another model before creating a relationship.");
-            return;
-        }
+        var input = await ShowRelationshipDialogAsync("Add relationship", null);
+        if (input is not null) await ApplyModelChangeAsync(() => App.Models.AddRelationship(_selectedModel.Id, input));
+    }
 
-        var name = new TextBox { Header = "Relationship name", PlaceholderText = "customer" };
-        var type = Combo("Relationship type", ModelDesigner.SupportedRelationshipTypes);
-        var target = new ComboBox { Header = "Target model", ItemsSource = targets, DisplayMemberPath = "Name", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var foreignKey = new TextBox { Header = "Foreign key (optional)", PlaceholderText = "customer_id" };
-        var pivotTable = new TextBox { Header = "Pivot table (belongs-to-many)", PlaceholderText = "customer_order" };
-        var panel = Panel(name, type, target, foreignKey, pivotTable);
-        if (await DialogAsync("Add relationship", panel, "Add") != ContentDialogResult.Primary) return;
-        if (target.SelectedItem is not ModelDefinition targetModel) return;
-        await ApplyModelChangeAsync(() => App.Models.AddRelationship(_selectedModel.Id,
-            new(name.Text, type.SelectedItem!.ToString()!, targetModel.Id, foreignKey.Text, pivotTable.Text)));
+    private async void EditRelationship_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedModel is null || RelationshipsList.SelectedItem is not RelationshipListItem item) return;
+        var input = await ShowRelationshipDialogAsync("Edit relationship", item.Relationship);
+        if (input is not null) await ApplyModelChangeAsync(() => App.Models.UpdateRelationship(_selectedModel.Id, item.Relationship.Id, input));
     }
 
     private async void DeleteRelationship_Click(object sender, RoutedEventArgs e)
@@ -217,8 +213,20 @@ public sealed partial class MainPage : Page
         await ApplyModelChangeAsync(() => App.Models.RemoveRelationship(_selectedModel.Id, item.Relationship.Id));
     }
 
-    private void RelationshipsList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        DeleteRelationshipButton.IsEnabled = RelationshipsList.SelectedItem is RelationshipListItem;
+    private void RelationshipsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var item = RelationshipsList.SelectedItem as RelationshipListItem;
+        var selected = item is not null;
+        EditRelationshipButton.IsEnabled = selected;
+        DeleteRelationshipButton.IsEnabled = selected;
+        RelationshipDetailsText.Text = item?.Details ?? "Select a relationship to view its details.";
+    }
+
+    private void InboundRelationshipsList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is InboundRelationshipListItem item && CurrentModels().FirstOrDefault(model => model.Id == item.SourceModelId) is { } source)
+            SelectModel(source);
+    }
 
     private async Task ApplyModelChangeAsync(Action change)
     {
@@ -245,9 +253,18 @@ public sealed partial class MainPage : Page
         NoModelInfo.IsOpen = models.Count == 0;
         if (models.Count == 0)
         {
+            _selectedModel = null;
             ModelEditor.Visibility = Visibility.Collapsed;
             AddRelationshipButton.IsEnabled = false;
             ModelOptionsText.Text = "Select a model";
+            ModelNameText.Text = "";
+            ModelTableText.Text = "";
+            FieldsList.ItemsSource = null;
+            RelationshipsList.ItemsSource = null;
+            InboundRelationshipsList.ItemsSource = null;
+            RelationshipDetailsText.Text = "Select a relationship to view its details.";
+            EditRelationshipButton.IsEnabled = false;
+            DeleteRelationshipButton.IsEnabled = false;
         }
     }
 
@@ -263,10 +280,14 @@ public sealed partial class MainPage : Page
         FieldsList.ItemsSource = null;
         FieldsList.ItemsSource = model.Fields;
         RelationshipsList.ItemsSource = null;
-        RelationshipsList.ItemsSource = model.Relationships.Select(relationship => new RelationshipListItem(relationship,
-            $"{relationship.Type} → {CurrentModels().FirstOrDefault(target => target.Id == relationship.TargetModelId)?.Name ?? "Missing model"}")).ToArray();
+        RelationshipsList.ItemsSource = model.Relationships.Select(relationship =>
+        {
+            var target = CurrentModels().FirstOrDefault(candidate => candidate.Id == relationship.TargetModelId)?.Name ?? "Missing model";
+            return new RelationshipListItem(relationship, $"{relationship.Type} → {target}",
+                $"Target: {target}\nType: {relationship.Type}\nForeign key: {relationship.ForeignKey ?? "Automatic"}\nPivot table: {relationship.PivotTable ?? "Not used"}");
+        }).ToArray();
         var incoming = App.Models.GetIncomingReferences(model.Id).Select(reference =>
-            new InboundRelationshipListItem(reference.SourceModelName,
+            new InboundRelationshipListItem(reference.SourceModelId, reference.SourceModelName,
                 $"{reference.RelationshipName} ({reference.RelationshipType}) → {model.Name}")).ToArray();
         InboundRelationshipsList.ItemsSource = incoming;
         NoInboundReferencesText.Visibility = incoming.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -274,6 +295,8 @@ public sealed partial class MainPage : Page
         EditFieldButton.IsEnabled = false;
         DeleteFieldButton.IsEnabled = false;
         DeleteRelationshipButton.IsEnabled = false;
+        EditRelationshipButton.IsEnabled = false;
+        RelationshipDetailsText.Text = "Select a relationship to view its details.";
     }
 
     private IReadOnlyList<ModelDefinition> CurrentModels() => App.Workspace.Current?.Iterations[^1].Models ?? [];
@@ -282,6 +305,7 @@ public sealed partial class MainPage : Page
     {
         var name = new TextBox { Header = "Model name (PascalCase)", Text = model?.Name ?? "", PlaceholderText = "CustomerOrder" };
         var table = new TextBox { Header = "Database table (snake_case)", Text = model?.TableName ?? "", PlaceholderText = "customer_orders" };
+        name.TextChanged += (_, _) => table.PlaceholderText = ModelDesigner.SuggestedTableName(string.IsNullOrWhiteSpace(name.Text) ? "CustomerOrder" : name.Text);
         var timestamps = new CheckBox { Content = "Add created_at and updated_at", IsChecked = model?.Timestamps ?? true };
         var softDeletes = new CheckBox { Content = "Add soft deletes", IsChecked = model?.SoftDeletes ?? false };
         if (await DialogAsync(title, Panel(name, table, timestamps, softDeletes), "Save") != ContentDialogResult.Primary) return null;
@@ -290,19 +314,56 @@ public sealed partial class MainPage : Page
 
     private async Task<FieldInput?> ShowFieldDialogAsync(string title, FieldDefinition? field)
     {
-        var name = new TextBox { Header = "Field name (snake_case)", Text = field?.Name ?? "", PlaceholderText = "company_name" };
-        var label = new TextBox { Header = "Label", Text = field?.Label ?? "", PlaceholderText = "Company name" };
+        var suggestion = _selectedModel is null ? new FieldSuggestion("name", "Name") : ModelDesigner.SuggestedField(_selectedModel);
+        var name = new TextBox { Header = "Field name (snake_case)", Text = field?.Name ?? "", PlaceholderText = suggestion.Name };
+        var label = new TextBox { Header = "Label", Text = field?.Label ?? "", PlaceholderText = suggestion.Label };
+        name.TextChanged += (_, _) => label.PlaceholderText = Humanize(string.IsNullOrWhiteSpace(name.Text) ? suggestion.Name : name.Text);
         var type = Combo("Field type", ModelDesigner.SupportedFieldTypes);
         type.SelectedItem = field?.Type ?? "string";
         var defaultValue = new TextBox { Header = "Default value (optional)", Text = field?.DefaultValue?.ToString() ?? "" };
-        var rules = new TextBox { Header = "Laravel validation rules (comma separated)", Text = field is null ? "" : string.Join(", ", field.ValidationRules), PlaceholderText = "required, max:120" };
+        var existingRules = field?.ValidationRules ?? [];
+        var required = new CheckBox { Content = "Required", IsChecked = existingRules.Contains("required") };
+        var email = new CheckBox { Content = "Email", IsChecked = existingRules.Contains("email") };
+        var maxEnabled = new CheckBox { Content = "Maximum length/value", IsChecked = existingRules.Any(rule => rule.StartsWith("max:")) };
+        var maxValue = new TextBox { Header = "Maximum", Text = existingRules.FirstOrDefault(rule => rule.StartsWith("max:"))?.Split(':').Last() ?? "255" };
+        var minEnabled = new CheckBox { Content = "Minimum length/value", IsChecked = existingRules.Any(rule => rule.StartsWith("min:")) };
+        var minValue = new TextBox { Header = "Minimum", Text = existingRules.FirstOrDefault(rule => rule.StartsWith("min:"))?.Split(':').Last() ?? "0" };
+        var validationButton = new Button { Content = "Add validation", HorizontalAlignment = HorizontalAlignment.Stretch };
+        validationButton.Flyout = new Flyout { Content = Panel(required, email, maxEnabled, maxValue, minEnabled, minValue) };
         var nullable = new CheckBox { Content = "Nullable", IsChecked = field?.Nullable ?? false };
         var indexed = new CheckBox { Content = "Indexed", IsChecked = field?.Indexed ?? false };
         var unique = new CheckBox { Content = "Unique (automatically indexed)", IsChecked = field?.Unique ?? false };
-        if (await DialogAsync(title, Panel(name, label, type, defaultValue, rules, nullable, indexed, unique), "Save") != ContentDialogResult.Primary) return null;
+        if (await DialogAsync(title, Panel(name, label, type, defaultValue, validationButton, nullable, indexed, unique), "Save") != ContentDialogResult.Primary) return null;
+        var rules = new List<string>();
+        if (required.IsChecked == true) rules.Add("required");
+        if (email.IsChecked == true) rules.Add("email");
+        if (minEnabled.IsChecked == true) rules.Add($"min:{minValue.Text}");
+        if (maxEnabled.IsChecked == true) rules.Add($"max:{maxValue.Text}");
         return new(name.Text, label.Text, type.SelectedItem!.ToString()!, nullable.IsChecked == true,
             indexed.IsChecked == true, unique.IsChecked == true, defaultValue.Text,
-            rules.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            rules);
+    }
+
+    private async Task<RelationshipInput?> ShowRelationshipDialogAsync(string title, RelationshipDefinition? relationship)
+    {
+        if (_selectedModel is null) return null;
+        var targets = CurrentModels().Where(model => model.Id != _selectedModel.Id).ToArray();
+        if (targets.Length == 0) { await ShowErrorAsync("Another model required", "Add another model before creating a relationship."); return null; }
+        var selectedTarget = targets.FirstOrDefault(model => model.Id == relationship?.TargetModelId) ?? targets[0];
+        var name = new TextBox { Header = "Relationship name", Text = relationship?.Name ?? "", PlaceholderText = selectedTarget.Name.ToLowerInvariant() };
+        var type = Combo("Relationship type", ModelDesigner.SupportedRelationshipTypes); type.SelectedItem = relationship?.Type ?? "belongs-to";
+        var target = new ComboBox { Header = "Target model", ItemsSource = targets, DisplayMemberPath = "Name", SelectedItem = selectedTarget, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var foreignKey = new TextBox { Header = "Foreign key (optional)", Text = relationship?.ForeignKey ?? "", PlaceholderText = selectedTarget.Name.ToLowerInvariant() + "_id" };
+        var pivotTable = new TextBox { Header = "Pivot table (belongs-to-many)", Text = relationship?.PivotTable ?? "", PlaceholderText = "customer_order" };
+        if (await DialogAsync(title, Panel(name, type, target, foreignKey, pivotTable), "Save") != ContentDialogResult.Primary) return null;
+        return target.SelectedItem is ModelDefinition targetModel
+            ? new(name.Text, type.SelectedItem!.ToString()!, targetModel.Id, foreignKey.Text, pivotTable.Text) : null;
+    }
+
+    private static string Humanize(string value)
+    {
+        var words = value.Replace('_', ' ').Trim().ToLowerInvariant();
+        return words.Length == 0 ? "Name" : char.ToUpperInvariant(words[0]) + words[1..];
     }
 
     private async Task<ContentDialogResult> DialogAsync(string title, object content, string primaryText) => await new ContentDialog
@@ -413,6 +474,6 @@ public sealed partial class MainPage : Page
     private static void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(
         picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 
-    private sealed record RelationshipListItem(RelationshipDefinition Relationship, string Summary);
-    private sealed record InboundRelationshipListItem(string SourceModel, string Summary);
+    private sealed record RelationshipListItem(RelationshipDefinition Relationship, string Summary, string Details);
+    private sealed record InboundRelationshipListItem(Guid SourceModelId, string SourceModel, string Summary);
 }

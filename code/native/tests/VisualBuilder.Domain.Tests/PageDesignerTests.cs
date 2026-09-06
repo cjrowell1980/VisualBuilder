@@ -44,8 +44,8 @@ public sealed class PageDesignerTests
 
         Assert.Equal("CustomerOrder", defaultModel.Name);
         Assert.Equal("customer_orders", defaultModel.TableName);
-        Assert.Equal("company_name", defaultField.Name);
-        Assert.Equal("Company name", defaultField.Label);
+        Assert.Equal("number", defaultField.Name);
+        Assert.Equal("Number", defaultField.Label);
         Assert.Equal("customer", relation.Name);
         Assert.Equal("customer_id", relation.ForeignKey);
         var manyToMany = models.AddRelationship(defaultModel.Id, new("customers", "belongs-to-many", target.Id, "", ""));
@@ -68,6 +68,19 @@ public sealed class PageDesignerTests
         Assert.Throws<PageDesignException>(() => designer.AddPage(new("Other", "customers", "custom", "app", null)));
         Assert.Throws<PageDesignException>(() => designer.AddControl(page.Id,
             new("input", "Number", "full", orderNumber.Id, new Dictionary<string, object?>())));
+    }
+
+    [Fact]
+    public async Task Stores_page_categories_and_protects_parent_pages()
+    {
+        var workspace = await Workspace();
+        var designer = new PageDesigner(workspace);
+        var parent = designer.AddPage(new("Orders", "orders", "index", "app", null, "Sales"));
+        var child = designer.AddPage(new("New order", "orders-create", "create", "app", null, "Sales / Orders", parent.Id));
+
+        Assert.Equal(parent.Id, child.ParentPageId);
+        Assert.Equal("Sales / Orders", child.Category);
+        Assert.Throws<PageDesignException>(() => designer.RemovePage(parent.Id));
     }
 
     [Fact]

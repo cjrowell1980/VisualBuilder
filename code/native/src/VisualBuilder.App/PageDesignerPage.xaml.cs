@@ -47,13 +47,20 @@ public sealed partial class PageDesignerPage : Page
 
     private void PagesList_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is PageDefinition page) SelectPage(page);
+        if (e.ClickedItem is PageExplorerItem item) SelectPage(item.Page);
     }
 
     private async void AddControl_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedPage is null) return;
         var input = await ShowControlDialogAsync("Add control", null);
+        if (input is not null) await ApplyAsync(() => App.Pages.AddControl(_selectedPage.Id, input));
+    }
+
+    private async void AddTypedContent_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedPage is null || sender is not MenuFlyoutItem item || item.Tag is not string type) return;
+        var input = await ShowControlDialogAsync($"Add {item.Text.ToLowerInvariant()}", null, type);
         if (input is not null) await ApplyAsync(() => App.Pages.AddControl(_selectedPage.Id, input));
     }
 
@@ -110,7 +117,8 @@ public sealed partial class PageDesignerPage : Page
     private void RefreshPages()
     {
         PagesList.ItemsSource = null;
-        PagesList.ItemsSource = Pages;
+        PagesList.ItemsSource = Pages.OrderBy(page => page.Position).Select(page =>
+            new PageExplorerItem(page, ExplorerName(page), ExplorerPath(page))).ToArray();
         NoPageText.Visibility = Pages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (Pages.Count == 0) PageEditor.Visibility = Visibility.Collapsed;
     }
@@ -118,13 +126,13 @@ public sealed partial class PageDesignerPage : Page
     private void SelectPage(PageDefinition page)
     {
         _selectedPage = page;
-        PagesList.SelectedItem = page;
+        PagesList.SelectedItem = PagesList.Items.Cast<PageExplorerItem>().FirstOrDefault(item => item.Page.Id == page.Id);
         NoPageText.Visibility = Visibility.Collapsed;
         PageEditor.Visibility = Visibility.Visible;
         PageNameText.Text = page.Name;
         PageSummaryText.Text = $"/{page.Slug} • {page.Type}";
         var modelName = Models.FirstOrDefault(model => model.Id == page.ModelId)?.Name ?? "No model";
-        PagePropertiesText.Text = $"Layout: {page.Layout}\nModel: {modelName}\nPosition: {page.Position + 1}";
+        PagePropertiesText.Text = $"Layout: {page.Layout}\nModel: {modelName}\nCategory: {page.Category ?? "None"}\nParent: {Pages.FirstOrDefault(item => item.Id == page.ParentPageId)?.Name ?? "None"}\nPosition: {page.Position + 1}";
         var model = Models.FirstOrDefault(candidate => candidate.Id == page.ModelId);
         ControlsList.ItemsSource = page.Controls.OrderBy(control => control.Position)
             .Select(control => new ControlListItem(control,
@@ -142,13 +150,18 @@ public sealed partial class PageDesignerPage : Page
         var modelChoices = new[] { new ModelChoice(null, "No model") }.Concat(Models.Select(model => new ModelChoice(model.Id, model.Name))).ToArray();
         var model = new ComboBox { Header = "Bound model", ItemsSource = modelChoices, DisplayMemberPath = "Name", HorizontalAlignment = HorizontalAlignment.Stretch };
         model.SelectedItem = modelChoices.FirstOrDefault(choice => choice.Id == page?.ModelId) ?? modelChoices[0];
-        if (await DialogAsync(title, Panel(name, slug, type, layout, model), "Save") != ContentDialogResult.Primary) return null;
-        return new(name.Text, slug.Text, type.SelectedItem!.ToString()!, layout.SelectedItem!.ToString()!, ((ModelChoice)model.SelectedItem).Id);
+        var category = new TextBox { Header = "Category path (optional)", Text = page?.Category ?? "", PlaceholderText = "Sales / Orders" };
+        var parentChoices = new[] { new PageChoice(null, "No parent page") }.Concat(Pages.Where(item => item.Id != page?.Id).Select(item => new PageChoice(item.Id, item.Name))).ToArray();
+        var parent = new ComboBox { Header = "Parent page (optional)", ItemsSource = parentChoices, DisplayMemberPath = "Name", HorizontalAlignment = HorizontalAlignment.Stretch };
+        parent.SelectedItem = parentChoices.FirstOrDefault(choice => choice.Id == page?.ParentPageId) ?? parentChoices[0];
+        if (await DialogAsync(title, Panel(name, slug, type, layout, model, category, parent), "Save") != ContentDialogResult.Primary) return null;
+        return new(name.Text, slug.Text, type.SelectedItem!.ToString()!, layout.SelectedItem!.ToString()!, ((ModelChoice)model.SelectedItem).Id,
+            category.Text, ((PageChoice)parent.SelectedItem).Id);
     }
 
-    private async Task<ControlInput?> ShowControlDialogAsync(string title, ControlDefinition? control)
+    private async Task<ControlInput?> ShowControlDialogAsync(string title, ControlDefinition? control, string? initialType = null)
     {
-        var type = Combo("Control type", PageDesigner.SupportedControlTypes); type.SelectedItem = control?.Type ?? "input";
+        var type = Combo("Content type", PageDesigner.SupportedControlTypes); type.SelectedItem = control?.Type ?? initialType ?? "input";
         var label = new TextBox { Header = "Label", Text = control?.Label ?? "", PlaceholderText = "Company name" };
         var width = Combo("Width", PageDesigner.SupportedWidths); width.SelectedItem = control?.Width ?? "full";
         var fields = new[] { new FieldChoice(null, "No field") };
@@ -156,10 +169,18 @@ public sealed partial class PageDesignerPage : Page
             fields = fields.Concat(Models.First(model => model.Id == modelId).Fields.Select(field => new FieldChoice(field.Id, field.Label))).ToArray();
         var field = new ComboBox { Header = "Bound field", ItemsSource = fields, DisplayMemberPath = "Name", HorizontalAlignment = HorizontalAlignment.Stretch };
         field.SelectedItem = fields.FirstOrDefault(choice => choice.Id == control?.FieldId) ?? fields[0];
-        var configuration = new TextBox { Header = "Configuration (key=value, comma separated)", PlaceholderText = "placeholder=Enter a name", Text = FormatConfiguration(control?.Configuration) };
-        if (await DialogAsync(title, Panel(type, label, width, field, configuration), "Save") != ContentDialogResult.Primary) return null;
+        var placeholder = new TextBox { Header = "Placeholder", Text = ConfigValue(control, "placeholder"), PlaceholderText = "Enter a value" };
+        var options = new TextBox { Header = "Options (comma separated)", Text = ConfigValue(control, "options"), PlaceholderText = "Draft, Active, Archived" };
+        var action = new TextBox { Header = "Action / destination", Text = ConfigValue(control, "action"), PlaceholderText = "save" };
+        var columns = new TextBox { Header = "Table columns (comma separated)", Text = ConfigValue(control, "columns"), PlaceholderText = "Name, Email, Status" };
+        var style = new TextBox { Header = "Style / level", Text = ConfigValue(control, "style"), PlaceholderText = "primary or h2" };
+        var configuration = new TextBox { Header = "Extra configuration (key=value)", Text = ExtraConfiguration(control), PlaceholderText = "help=Shown below the field" };
+        if (await DialogAsync(title, Panel(type, label, width, field, placeholder, options, action, columns, style, configuration), "Save") != ContentDialogResult.Primary) return null;
+        var config = ParseConfiguration(configuration.Text).ToDictionary(item => item.Key, item => item.Value, StringComparer.OrdinalIgnoreCase);
+        AddConfig(config, "placeholder", placeholder.Text); AddConfig(config, "options", options.Text);
+        AddConfig(config, "action", action.Text); AddConfig(config, "columns", columns.Text); AddConfig(config, "style", style.Text);
         return new(type.SelectedItem!.ToString()!, label.Text, width.SelectedItem!.ToString()!, ((FieldChoice)field.SelectedItem).Id,
-            ParseConfiguration(configuration.Text));
+            config);
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
@@ -191,8 +212,21 @@ public sealed partial class PageDesignerPage : Page
         .Select(item => item.Split('=', 2, StringSplitOptions.TrimEntries)).Where(parts => parts.Length == 2 && parts[0].Length > 0)
         .ToDictionary(parts => parts[0], parts => (object?)parts[1], StringComparer.OrdinalIgnoreCase);
     private static string FormatConfiguration(IReadOnlyDictionary<string, object?>? configuration) => configuration is null ? "" : string.Join(", ", configuration.Select(item => $"{item.Key}={item.Value}"));
+    private static string ConfigValue(ControlDefinition? control, string key) => control?.Configuration.TryGetValue(key, out var value) == true ? value?.ToString() ?? "" : "";
+    private static string ExtraConfiguration(ControlDefinition? control) => control is null ? "" : string.Join(", ", control.Configuration
+        .Where(item => item.Key is not ("placeholder" or "options" or "action" or "columns" or "style")).Select(item => $"{item.Key}={item.Value}"));
+    private static void AddConfig(IDictionary<string, object?> config, string key, string value) { if (!string.IsNullOrWhiteSpace(value)) config[key] = value.Trim(); }
+    private string ExplorerName(PageDefinition page)
+    {
+        var depth = 0; var parentId = page.ParentPageId;
+        while (parentId is not null && depth < Pages.Count) { depth++; parentId = Pages.FirstOrDefault(item => item.Id == parentId)?.ParentPageId; }
+        return $"{new string(' ', depth * 3)}{page.Name}";
+    }
+    private string ExplorerPath(PageDefinition page) => string.IsNullOrWhiteSpace(page.Category) ? $"/{page.Slug}" : $"{page.Category} / {page.Slug}";
 
     private sealed record ModelChoice(Guid? Id, string Name);
+    private sealed record PageChoice(Guid? Id, string Name);
     private sealed record FieldChoice(Guid? Id, string Name);
     private sealed record ControlListItem(ControlDefinition Control, string Binding);
+    private sealed record PageExplorerItem(PageDefinition Page, string DisplayName, string Path);
 }

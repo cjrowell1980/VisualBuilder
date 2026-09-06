@@ -45,7 +45,8 @@ public sealed record FieldDefinition(Guid Id, string Name, string Label, string 
 public sealed record RelationshipDefinition(Guid Id, string Name, string Type, Guid TargetModelId,
     string? ForeignKey = null, string? PivotTable = null);
 public sealed record PageDefinition(Guid Id, Guid? ModelId, string Name, string Slug, string Type, string Layout,
-    IReadOnlyList<ControlDefinition> Controls, IReadOnlyList<EventBinding> EventBindings, int Position);
+    IReadOnlyList<ControlDefinition> Controls, IReadOnlyList<EventBinding> EventBindings, int Position,
+    string? Category = null, Guid? ParentPageId = null);
 public sealed record ControlDefinition(Guid Id, Guid? FieldId, string Type, string Label, string Width, int Position,
     IReadOnlyDictionary<string, object?> Configuration);
 public sealed record EventBinding(Guid? ControlId, string Event, Guid FunctionId);

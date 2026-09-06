@@ -41,8 +41,8 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
 
     public FieldDefinition AddField(Guid modelId, FieldInput input)
     {
-        input = Normalize(input);
         var model = FindModel(modelId);
+        input = Normalize(input, model);
         ValidateField(input, model.Fields);
         var field = ToField(Guid.NewGuid(), input, model.Fields.Count);
         UpdateModelCore(modelId, current => current with { Fields = [.. current.Fields, field] });
@@ -51,8 +51,8 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
 
     public void UpdateField(Guid modelId, Guid fieldId, FieldInput input)
     {
-        input = Normalize(input);
         var model = FindModel(modelId);
+        input = Normalize(input, model);
         ValidateField(input, model.Fields.Where(field => field.Id != fieldId));
         UpdateModelCore(modelId, current => current with
         {
@@ -91,6 +91,24 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
     {
         Relationships = model.Relationships.Where(item => item.Id != relationshipId).ToArray()
     });
+
+    public void UpdateRelationship(Guid modelId, Guid relationshipId, RelationshipInput input)
+    {
+        var model = FindModel(modelId);
+        var target = RequireDocument().Iterations[^1].Models.FirstOrDefault(candidate => candidate.Id == input.TargetModelId)
+            ?? throw new ModelDesignException("Select a target model that exists in this iteration.");
+        input = Normalize(input, model, target);
+        if (model.Relationships.Any(item => item.Id != relationshipId &&
+            item.Name.Equals(input.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+            throw new ModelDesignException("Relationship names must be unique within a model.");
+        UpdateModelCore(modelId, current => current with
+        {
+            Relationships = current.Relationships.Select(item => item.Id == relationshipId
+                ? item with { Name = input.Name.Trim(), Type = input.Type, TargetModelId = input.TargetModelId,
+                    ForeignKey = EmptyToNull(input.ForeignKey), PivotTable = EmptyToNull(input.PivotTable) }
+                : item).ToArray()
+        });
+    }
 
     public IReadOnlyList<IncomingModelReference> GetIncomingReferences(Guid targetModelId) => RequireDocument().Iterations[^1].Models
         .SelectMany(source => source.Relationships
@@ -150,11 +168,27 @@ public sealed partial class ModelDesigner(ProjectWorkspace workspace)
         return input with { Name = name, TableName = table };
     }
 
-    private static FieldInput Normalize(FieldInput input)
+    private static FieldInput Normalize(FieldInput input, ModelDefinition model)
     {
-        var name = string.IsNullOrWhiteSpace(input.Name) ? "company_name" : input.Name.Trim();
-        var label = string.IsNullOrWhiteSpace(input.Label) ? "Company name" : input.Label.Trim();
+        var suggestion = SuggestedField(model);
+        var name = string.IsNullOrWhiteSpace(input.Name) ? suggestion.Name : input.Name.Trim();
+        var label = string.IsNullOrWhiteSpace(input.Label) ? suggestion.Label : input.Label.Trim();
         return input with { Name = name, Label = label, Type = string.IsNullOrWhiteSpace(input.Type) ? "string" : input.Type };
+    }
+
+    public static FieldSuggestion SuggestedField(ModelDefinition model)
+    {
+        var candidates = model.Name.Contains("Order", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "number", "order_date", "total", "status", "notes" }
+            : model.Name.Contains("Product", StringComparison.OrdinalIgnoreCase)
+                ? new[] { "name", "sku", "description", "price", "is_active" }
+                : model.Name.Contains("Company", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { "name", "company_no", "vat", "email", "phone" }
+                    : new[] { "name", "email", "phone", "company_no", "vat", "description" };
+        var name = candidates.FirstOrDefault(candidate => model.Fields.All(field => !field.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+            ?? $"field_{model.Fields.Count + 1}";
+        return new(name, string.Join(' ', name.Split('_')).ToLowerInvariant() is var label
+            ? char.ToUpperInvariant(label[0]) + label[1..] : name);
     }
 
     private static RelationshipInput Normalize(RelationshipInput input, ModelDefinition source, ModelDefinition target)
@@ -186,4 +220,5 @@ public sealed record FieldInput(string Name, string Label, string Type, bool Nul
 public sealed record RelationshipInput(string Name, string Type, Guid TargetModelId, string? ForeignKey, string? PivotTable);
 public sealed record IncomingModelReference(Guid SourceModelId, string SourceModelName, Guid RelationshipId,
     string RelationshipName, string RelationshipType);
+public sealed record FieldSuggestion(string Name, string Label);
 public sealed class ModelDesignException(string message) : Exception(message);
